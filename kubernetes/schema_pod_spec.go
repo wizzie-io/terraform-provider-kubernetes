@@ -2,7 +2,7 @@ package kubernetes
 
 import "github.com/hashicorp/terraform/helper/schema"
 
-func podSpecFields() map[string]*schema.Schema {
+func podSpecFields(updateable bool) map[string]*schema.Schema {
 	return map[string]*schema.Schema{
 		"active_deadline_seconds": {
 			Type:         schema.TypeInt,
@@ -15,7 +15,7 @@ func podSpecFields() map[string]*schema.Schema {
 			Optional:    true,
 			Description: "List of containers belonging to the pod. Containers cannot currently be added or removed. There must be at least one container in a Pod. Cannot be updated. More info: http://kubernetes.io/docs/user-guide/containers",
 			Elem: &schema.Resource{
-				Schema: containerFields(),
+				Schema: containerFields(updateable),
 			},
 		},
 		"dns_policy": {
