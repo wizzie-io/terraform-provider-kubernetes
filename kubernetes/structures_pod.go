@@ -301,7 +301,9 @@ func flattenSecretVolumeSource(in *v1.SecretVolumeSource) []interface{} {
 		}
 		att["items"] = items
 	}
-	att["optional"] = *in.Optional
+	if in.Optional != nil {
+		att["optional"] = *in.Optional
+	}
 	return []interface{}{att}
 }
 
