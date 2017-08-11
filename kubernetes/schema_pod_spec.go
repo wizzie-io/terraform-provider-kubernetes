@@ -133,7 +133,7 @@ func podSpecFields(updateable bool) map[string]*schema.Schema {
 		"automount_service_account_token": {
 			Type:        schema.TypeBool,
 			Optional:    true,
-			Computed:    true,
+			Default:     true,
 			Description: "In version 1.6+, you can also opt out of automounting API credentials for a particular pod",
 		},
 		"subdomain": {
