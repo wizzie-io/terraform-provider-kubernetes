@@ -47,6 +47,7 @@ func flattenDeploymentStrategyRollingUpdate(in *v1beta1.RollingUpdateDeployment)
 	if in.MaxUnavailable != nil {
 		att["max_unavailable"] = in.MaxUnavailable.String()
 	}
+
 	return []interface{}{att}
 }
 
