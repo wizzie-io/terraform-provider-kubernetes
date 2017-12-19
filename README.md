@@ -6,6 +6,11 @@
 
 <img src="https://cdn.rawgit.com/hashicorp/terraform-website/master/content/source/assets/images/logo-hashicorp.svg" width="600px">
 
+Maintainers
+-----------
+
+This provider plugin is maintained by the Terraform team at [HashiCorp](https://www.hashicorp.com/).
+
 ## Requirements
 
 
@@ -14,17 +19,17 @@
 
 ## Building The Provider
 
-Clone repository to: `$GOPATH/src/github.com/hashicorp/terraform-provider-$PROVIDER_NAME`
+Clone repository to: `$GOPATH/src/github.com/terraform-providers/terraform-provider-$PROVIDER_NAME`
 
 ```sh
-$ mkdir -p $GOPATH/src/github.com/hashicorp; cd $GOPATH/src/github.com/hashicorp
-$ git clone git@github.com:hashicorp/terraform-provider-$PROVIDER_NAME
+$ mkdir -p $GOPATH/src/github.com/terraform-providers; cd $GOPATH/src/github.com/terraform-providers
+$ git clone git@github.com:terraform-providers/terraform-provider-$PROVIDER_NAME
 ```
 
 Enter the provider directory and build the provider
 
 ```sh
-$ cd $GOPATH/src/github.com/hashicorp/terraform-provider-$PROVIDER_NAME
+$ cd $GOPATH/src/github.com/terraform-providers/terraform-provider-$PROVIDER_NAME
 $ make build
 ```
 
