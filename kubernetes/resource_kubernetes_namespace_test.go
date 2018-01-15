@@ -200,9 +200,11 @@ func testAccCheckMetaAnnotations(om *meta_v1.ObjectMeta, expected map[string]str
 		if len(expected) == 0 && len(om.Annotations) == 0 {
 			return nil
 		}
-		if !reflect.DeepEqual(om.Annotations, expected) {
+		// remove internal keys from Annotations before comparing
+		annotations := removeInternalKeys(om.Annotations, nil)
+		if !reflect.DeepEqual(annotations, expected) {
 			return fmt.Errorf("%s annotations don't match.\nExpected: %q\nGiven: %q",
-				om.Name, expected, om.Annotations)
+				om.Name, expected, annotations)
 		}
 		return nil
 	}
