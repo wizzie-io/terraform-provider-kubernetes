@@ -8,11 +8,11 @@ import (
 
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
+	api "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
 	kubernetes "k8s.io/client-go/kubernetes"
-	api "k8s.io/client-go/pkg/api/v1"
 )
 
 func resourceKubernetesPod() *schema.Resource {
@@ -203,7 +203,7 @@ func resourceKubernetesPodDelete(d *schema.ResourceData, meta interface{}) error
 		return err
 	}
 
-	err = resource.Retry(1*time.Minute, func() *resource.RetryError {
+	err = resource.Retry(5*time.Minute, func() *resource.RetryError {
 		out, err := conn.CoreV1().Pods(namespace).Get(name, metav1.GetOptions{})
 		if err != nil {
 			if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
