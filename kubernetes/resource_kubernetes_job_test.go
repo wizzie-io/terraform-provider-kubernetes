@@ -32,7 +32,7 @@ func TestAccKubernetesJob_basic(t *testing.T) {
 					resource.TestCheckResourceAttrSet("kubernetes_job.test", "metadata.0.uid"),
 					resource.TestCheckResourceAttr("kubernetes_job.test", "spec.#", "1"),
 					resource.TestCheckResourceAttr("kubernetes_job.test", "spec.0.parallelism", "2"),
-					resource.TestCheckResourceAttr("kubernetes_job.test", "spec.0.template.0.container.0.name", "hello"),
+					resource.TestCheckResourceAttr("kubernetes_job.test", "spec.0.template.0.spec.0.container.0.name", "hello"),
 				),
 			},
 			{
@@ -46,7 +46,7 @@ func TestAccKubernetesJob_basic(t *testing.T) {
 					resource.TestCheckResourceAttrSet("kubernetes_job.test", "metadata.0.uid"),
 					resource.TestCheckResourceAttr("kubernetes_job.test", "spec.#", "1"),
 					resource.TestCheckResourceAttr("kubernetes_job.test", "spec.0.parallelism", "2"),
-					resource.TestCheckResourceAttr("kubernetes_job.test", "spec.0.template.0.container.0.name", "hello"),
+					resource.TestCheckResourceAttr("kubernetes_job.test", "spec.0.template.0.spec.0.container.0.name", "hello"),
 				),
 			},
 		},
@@ -110,10 +110,17 @@ resource "kubernetes_job" "test" {
 	spec {
 		parallelism = 2
 		template {
-			container {
-				name = "hello"
-				image = "alpine"
-				command = ["echo", "'hello'"]
+			metadata {
+				labels {
+					job = "one"
+				}
+			}
+			spec {
+				container {
+					name = "hello"
+					image = "alpine"
+					command = ["echo", "'hello'"]
+				}
 			}
 		}
 	}
@@ -129,10 +136,12 @@ resource "kubernetes_job" "test" {
 	spec {
 		parallelism = 2
 		template {
-			container {
-				name = "hello"
-				image = "alpine"
-				command = ["echo", "'world'"]
+			spec {
+				container {
+					name = "hello"
+					image = "alpine"
+					command = ["echo", "'world'"]
+				}
 			}
 		}
 	}
