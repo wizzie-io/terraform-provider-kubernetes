@@ -4,13 +4,13 @@ import (
 	"strconv"
 
 	"github.com/hashicorp/terraform/helper/schema"
+	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/pkg/api/v1"
-	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
 )
 
-func flattenDeploymentSpec(in v1beta1.DeploymentSpec, d *schema.ResourceData) ([]interface{}, error) {
+func flattenDeploymentSpec(in appsv1.DeploymentSpec, d *schema.ResourceData) ([]interface{}, error) {
 	att := make(map[string]interface{})
 
 	att["min_ready_seconds"] = in.MinReadySeconds
@@ -49,7 +49,7 @@ func flattenDeploymentSpec(in v1beta1.DeploymentSpec, d *schema.ResourceData) ([
 	return []interface{}{att}, nil
 }
 
-func flattenDeploymentStrategy(in v1beta1.DeploymentStrategy) []interface{} {
+func flattenDeploymentStrategy(in appsv1.DeploymentStrategy) []interface{} {
 	att := make(map[string]interface{})
 	if in.Type != "" {
 		att["type"] = in.Type
@@ -60,7 +60,7 @@ func flattenDeploymentStrategy(in v1beta1.DeploymentStrategy) []interface{} {
 	return []interface{}{att}
 }
 
-func flattenDeploymentStrategyRollingUpdate(in *v1beta1.RollingUpdateDeployment) []interface{} {
+func flattenDeploymentStrategyRollingUpdate(in *appsv1.RollingUpdateDeployment) []interface{} {
 	att := make(map[string]interface{})
 	if in.MaxSurge != nil {
 		att["max_surge"] = in.MaxSurge.String()
@@ -72,8 +72,8 @@ func flattenDeploymentStrategyRollingUpdate(in *v1beta1.RollingUpdateDeployment)
 	return []interface{}{att}
 }
 
-func expandDeploymentSpec(deployment []interface{}) (v1beta1.DeploymentSpec, error) {
-	obj := v1beta1.DeploymentSpec{}
+func expandDeploymentSpec(deployment []interface{}) (appsv1.DeploymentSpec, error) {
+	obj := appsv1.DeploymentSpec{}
 	if len(deployment) == 0 || deployment[0] == nil {
 		return obj, nil
 	}
@@ -114,15 +114,15 @@ func expandDeploymentSpec(deployment []interface{}) (v1beta1.DeploymentSpec, err
 	return obj, nil
 }
 
-func expandDeploymentStrategy(p []interface{}) v1beta1.DeploymentStrategy {
-	obj := v1beta1.DeploymentStrategy{}
+func expandDeploymentStrategy(p []interface{}) appsv1.DeploymentStrategy {
+	obj := appsv1.DeploymentStrategy{}
 	if len(p) == 0 || p[0] == nil {
 		return obj
 	}
 	in := p[0].(map[string]interface{})
 
 	if v, ok := in["type"]; ok {
-		obj.Type = v1beta1.DeploymentStrategyType(v.(string))
+		obj.Type = appsv1.DeploymentStrategyType(v.(string))
 	}
 	if v, ok := in["rolling_update"]; ok {
 		obj.RollingUpdate = expandRollingUpdateDeployment(v.([]interface{}))
@@ -130,8 +130,8 @@ func expandDeploymentStrategy(p []interface{}) v1beta1.DeploymentStrategy {
 	return obj
 }
 
-func expandRollingUpdateDeployment(p []interface{}) *v1beta1.RollingUpdateDeployment {
-	obj := v1beta1.RollingUpdateDeployment{}
+func expandRollingUpdateDeployment(p []interface{}) *appsv1.RollingUpdateDeployment {
+	obj := appsv1.RollingUpdateDeployment{}
 	if len(p) == 0 || p[0] == nil {
 		return &obj
 	}

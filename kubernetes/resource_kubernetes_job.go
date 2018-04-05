@@ -7,11 +7,11 @@ import (
 
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
+	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
 	kubernetes "k8s.io/client-go/kubernetes"
-	batchv1 "k8s.io/client-go/pkg/apis/batch/v1"
 )
 
 func resourceKubernetesJob() *schema.Resource {
@@ -53,7 +53,6 @@ func resourceKubernetesJobCreate(d *schema.ResourceData, meta interface{}) error
 	if err != nil {
 		return err
 	}
-	spec.Template.ObjectMeta.Annotations = metadata.Annotations
 
 	job := batchv1.Job{
 		ObjectMeta: metadata,

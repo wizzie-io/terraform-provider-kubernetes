@@ -9,11 +9,11 @@ import (
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
 	kubernetes "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
 )
 
 func resourceKubernetesDeployment() *schema.Resource {
@@ -190,13 +190,13 @@ func resourceKubernetesDeploymentCreate(d *schema.ResourceData, meta interface{}
 		metadata.Namespace = "default"
 	}
 
-	deployment := v1beta1.Deployment{
+	deployment := appsv1.Deployment{
 		ObjectMeta: metadata,
 		Spec:       spec,
 	}
 
 	log.Printf("[INFO] Creating new deployment: %#v", deployment)
-	out, err := conn.ExtensionsV1beta1().Deployments(metadata.Namespace).Create(&deployment)
+	out, err := conn.AppsV1().Deployments(metadata.Namespace).Create(&deployment)
 	if err != nil {
 		return fmt.Errorf("Failed to create deployment: %s", err)
 	}
@@ -225,7 +225,7 @@ func resourceKubernetesDeploymentRead(d *schema.ResourceData, meta interface{}) 
 
 	namespace, name, err := idParts(d.Id())
 	log.Printf("[INFO] Reading deployment %s", name)
-	deployment, err := conn.ExtensionsV1beta1().Deployments(namespace).Get(name, metav1.GetOptions{})
+	deployment, err := conn.AppsV1().Deployments(namespace).Get(name, metav1.GetOptions{})
 	if err != nil {
 		log.Printf("[DEBUG] Received error: %#v", err)
 		return err
@@ -278,7 +278,7 @@ func resourceKubernetesDeploymentUpdate(d *schema.ResourceData, meta interface{}
 		return fmt.Errorf("Failed to marshal update operations: %s", err)
 	}
 	log.Printf("[INFO] Updating deployment %q: %v", name, string(data))
-	out, err := conn.ExtensionsV1beta1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
+	out, err := conn.AppsV1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
 	if err != nil {
 		return fmt.Errorf("Failed to update deployment: %s", err)
 	}
@@ -309,7 +309,7 @@ func resourceKubernetesDeploymentDelete(d *schema.ResourceData, meta interface{}
 	if err != nil {
 		return err
 	}
-	_, err = conn.ExtensionsV1beta1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
+	_, err = conn.AppsV1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
 	if err != nil {
 		return err
 	}
@@ -322,7 +322,7 @@ func resourceKubernetesDeploymentDelete(d *schema.ResourceData, meta interface{}
 	}
 
 	policy := metav1.DeletePropagationForeground
-	err = conn.ExtensionsV1beta1().Deployments(namespace).Delete(name, &metav1.DeleteOptions{
+	err = conn.AppsV1().Deployments(namespace).Delete(name, &metav1.DeleteOptions{
 		PropagationPolicy: &policy,
 	})
 	if err != nil {
@@ -340,7 +340,7 @@ func resourceKubernetesDeploymentExists(d *schema.ResourceData, meta interface{}
 
 	namespace, name, err := idParts(d.Id())
 	log.Printf("[INFO] Checking deployment %s", name)
-	_, err = conn.ExtensionsV1beta1().Deployments(namespace).Get(name, metav1.GetOptions{})
+	_, err = conn.AppsV1().Deployments(namespace).Get(name, metav1.GetOptions{})
 	if err != nil {
 		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
 			return false, nil
@@ -352,7 +352,7 @@ func resourceKubernetesDeploymentExists(d *schema.ResourceData, meta interface{}
 
 func waitForDeploymentReplicasFunc(conn *kubernetes.Clientset, ns, name string) resource.RetryFunc {
 	return func() *resource.RetryError {
-		deployment, err := conn.ExtensionsV1beta1().Deployments(ns).Get(name, metav1.GetOptions{})
+		deployment, err := conn.AppsV1().Deployments(ns).Get(name, metav1.GetOptions{})
 		if err != nil {
 			return resource.NonRetryableError(err)
 		}

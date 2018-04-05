@@ -5,11 +5,11 @@ import (
 	"log"
 
 	"github.com/hashicorp/terraform/helper/schema"
+	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
 	kubernetes "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
 )
 
 func resourceKubernetesIngress() *schema.Resource {

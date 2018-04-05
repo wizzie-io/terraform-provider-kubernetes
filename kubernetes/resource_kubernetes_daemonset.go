@@ -8,10 +8,10 @@ import (
 
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubernetes "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
 )
 
 func resourceKubernetesDaemonSet() *schema.Resource {
@@ -137,7 +137,7 @@ func resourceKubernetesDaemonSet() *schema.Resource {
 	}
 }
 
-func buildDaemonSetObject(d *schema.ResourceData) (*v1beta1.DaemonSet, error) {
+func buildDaemonSetObject(d *schema.ResourceData) (*appsv1.DaemonSet, error) {
 	metadata := expandMetadata(d.Get("metadata").([]interface{}))
 	spec, err := expandDaemonSetSpec(d.Get("spec").([]interface{}))
 	if err != nil {
@@ -147,7 +147,7 @@ func buildDaemonSetObject(d *schema.ResourceData) (*v1beta1.DaemonSet, error) {
 		metadata.Namespace = "default"
 	}
 
-	daemonset := v1beta1.DaemonSet{
+	daemonset := appsv1.DaemonSet{
 		ObjectMeta: metadata,
 		Spec:       spec,
 	}
@@ -164,7 +164,7 @@ func resourceKubernetesDaemonSetCreate(d *schema.ResourceData, meta interface{})
 	}
 
 	log.Printf("[INFO] Creating new daemonset: %#v", daemonset)
-	out, err := conn.DaemonSets(daemonset.ObjectMeta.Namespace).Create(daemonset)
+	out, err := conn.AppsV1().DaemonSets(daemonset.ObjectMeta.Namespace).Create(daemonset)
 	if err != nil {
 		return fmt.Errorf("Failed to create daemonset: %s", err)
 	}
@@ -181,7 +181,7 @@ func resourceKubernetesDaemonSetRead(d *schema.ResourceData, meta interface{}) e
 
 	namespace, name, err := idParts(d.Id())
 	log.Printf("[INFO] Reading daemonset %s", name)
-	daemonset, err := conn.DaemonSets(namespace).Get(name, metav1.GetOptions{})
+	daemonset, err := conn.AppsV1().DaemonSets(namespace).Get(name, metav1.GetOptions{})
 	if err != nil {
 		log.Printf("[DEBUG] Received error: %#v", err)
 		return err
@@ -222,7 +222,7 @@ func resourceKubernetesDaemonSetUpdate(d *schema.ResourceData, meta interface{})
 	}
 
 	log.Printf("[INFO] Updating daemonset: %q", name)
-	out, err := conn.DaemonSets(namespace).Update(daemonset)
+	out, err := conn.AppsV1().DaemonSets(namespace).Update(daemonset)
 	if err != nil {
 		return fmt.Errorf("Failed to update daemonset: %s", err)
 	}
@@ -241,7 +241,7 @@ func resourceKubernetesDaemonSetDelete(d *schema.ResourceData, meta interface{})
 	log.Printf("[INFO] Deleting daemonset: %#v", name)
 
 	falseVar := false
-	conn.DaemonSets(namespace).Delete(name, &metav1.DeleteOptions{OrphanDependents: &falseVar})
+	conn.AppsV1().DaemonSets(namespace).Delete(name, &metav1.DeleteOptions{OrphanDependents: &falseVar})
 
 	log.Printf("[INFO] DaemonSet %s deleted", name)
 
@@ -254,7 +254,7 @@ func resourceKubernetesDaemonSetExists(d *schema.ResourceData, meta interface{})
 
 	namespace, name, err := idParts(d.Id())
 	log.Printf("[INFO] Checking daemonset %s", name)
-	_, err = conn.DaemonSets(namespace).Get(name, metav1.GetOptions{})
+	_, err = conn.AppsV1().DaemonSets(namespace).Get(name, metav1.GetOptions{})
 	if err != nil {
 		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
 			return false, nil

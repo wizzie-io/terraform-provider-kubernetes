@@ -7,11 +7,11 @@ import (
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
 	kubernetes "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/apis/apps/v1beta1"
 )
 
 func resourceKubernetesStatefulSet() *schema.Resource {
@@ -162,13 +162,13 @@ func resourceKubernetesStatefulSetCreate(d *schema.ResourceData, meta interface{
 		metadata.Namespace = "default"
 	}
 
-	statefulSet := v1beta1.StatefulSet{
+	statefulSet := appsv1.StatefulSet{
 		ObjectMeta: metadata,
 		Spec:       spec,
 	}
 
 	log.Printf("[INFO] Creating new Stateful Set: %#v", statefulSet)
-	out, err := conn.AppsV1beta1().StatefulSets(metadata.Namespace).Create(&statefulSet)
+	out, err := conn.AppsV1().StatefulSets(metadata.Namespace).Create(&statefulSet)
 	if err != nil {
 		return fmt.Errorf("Failed to create Stateful Set: %s", err)
 	}
@@ -197,7 +197,7 @@ func resourceKubernetesStatefulSetRead(d *schema.ResourceData, meta interface{})
 
 	namespace, name, err := idParts(d.Id())
 	log.Printf("[INFO] Reading statefulSet %s", name)
-	statefulSet, err := conn.AppsV1beta1().StatefulSets(namespace).Get(name, metav1.GetOptions{})
+	statefulSet, err := conn.AppsV1().StatefulSets(namespace).Get(name, metav1.GetOptions{})
 	if err != nil {
 		log.Printf("[DEBUG] Received error: %#v", err)
 		return err
@@ -250,7 +250,7 @@ func resourceKubernetesStatefulSetUpdate(d *schema.ResourceData, meta interface{
 		return fmt.Errorf("Failed to marshal update operations: %s", err)
 	}
 	log.Printf("[INFO] Updating statefulSet %q: %v", name, string(data))
-	out, err := conn.AppsV1beta1().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
+	out, err := conn.AppsV1().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
 	if err != nil {
 		return fmt.Errorf("Failed to update statefulSet: %s", err)
 	}
@@ -281,7 +281,7 @@ func resourceKubernetesStatefulSetDelete(d *schema.ResourceData, meta interface{
 	if err != nil {
 		return err
 	}
-	_, err = conn.AppsV1beta1().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
+	_, err = conn.AppsV1().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
 	if err != nil {
 		return err
 	}
@@ -293,7 +293,7 @@ func resourceKubernetesStatefulSetDelete(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	err = conn.AppsV1beta1().StatefulSets(namespace).Delete(name, &metav1.DeleteOptions{})
+	err = conn.AppsV1().StatefulSets(namespace).Delete(name, &metav1.DeleteOptions{})
 	if err != nil {
 		return err
 	}
@@ -313,7 +313,7 @@ func resourceKubernetesStatefulSetExists(d *schema.ResourceData, meta interface{
 	}
 
 	log.Printf("[INFO] Checking statefulSet %s", name)
-	_, err = conn.AppsV1beta1().StatefulSets(namespace).Get(name, metav1.GetOptions{})
+	_, err = conn.AppsV1().StatefulSets(namespace).Get(name, metav1.GetOptions{})
 	if err != nil {
 		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
 			return false, nil
@@ -325,7 +325,7 @@ func resourceKubernetesStatefulSetExists(d *schema.ResourceData, meta interface{
 
 func waitForStatefulSetReplicasFunc(conn *kubernetes.Clientset, ns, name string) resource.RetryFunc {
 	return func() *resource.RetryError {
-		statefulSet, err := conn.AppsV1beta1().StatefulSets(ns).Get(name, metav1.GetOptions{})
+		statefulSet, err := conn.AppsV1().StatefulSets(ns).Get(name, metav1.GetOptions{})
 		if err != nil {
 			return resource.NonRetryableError(err)
 		}
