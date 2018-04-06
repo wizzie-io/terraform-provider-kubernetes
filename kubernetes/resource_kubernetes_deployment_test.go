@@ -8,13 +8,13 @@ import (
 	"github.com/hashicorp/terraform/helper/acctest"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
+	appsv1 "k8s.io/api/apps/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubernetes "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
 )
 
 func TestAccKubernetesDeployment_minimal(t *testing.T) {
-	var conf v1beta1.Deployment
+	var conf appsv1.Deployment
 	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 
 	resource.Test(t, resource.TestCase{
@@ -37,7 +37,7 @@ func TestAccKubernetesDeployment_minimal(t *testing.T) {
 }
 
 func TestAccKubernetesDeployment_basic(t *testing.T) {
-	var conf v1beta1.Deployment
+	var conf appsv1.Deployment
 	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 
 	resource.Test(t, resource.TestCase{
@@ -142,7 +142,7 @@ func TestAccKubernetesDeployment_importBasic(t *testing.T) {
 }
 
 func TestAccKubernetesDeployment_with_template_metadata(t *testing.T) {
-	var conf v1beta1.Deployment
+	var conf appsv1.Deployment
 
 	depName := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 	imageName := "nginx:1.7.9"
@@ -183,7 +183,7 @@ func TestAccKubernetesDeployment_with_template_metadata(t *testing.T) {
 }
 
 func TestAccKubernetesDeployment_initContainer(t *testing.T) {
-	var conf v1beta1.Deployment
+	var conf appsv1.Deployment
 	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 
 	resource.Test(t, resource.TestCase{
@@ -203,7 +203,7 @@ func TestAccKubernetesDeployment_initContainer(t *testing.T) {
 	})
 }
 func TestAccKubernetesDeployment_noTopLevelLabels(t *testing.T) {
-	var conf v1beta1.Deployment
+	var conf appsv1.Deployment
 	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 
 	resource.Test(t, resource.TestCase{
@@ -243,7 +243,7 @@ func testAccCheckKubernetesDeploymentDestroy(s *terraform.State) error {
 			return err
 		}
 
-		resp, err := conn.ExtensionsV1beta1().Deployments(namespace).Get(name, meta_v1.GetOptions{})
+		resp, err := conn.AppsV1().Deployments(namespace).Get(name, meta_v1.GetOptions{})
 		if err == nil {
 			if resp.Name == rs.Primary.ID {
 				return fmt.Errorf("Deployment still exists: %s", rs.Primary.ID)
@@ -254,7 +254,7 @@ func testAccCheckKubernetesDeploymentDestroy(s *terraform.State) error {
 	return nil
 }
 
-func testAccCheckKubernetesDeploymentExists(n string, obj *v1beta1.Deployment) resource.TestCheckFunc {
+func testAccCheckKubernetesDeploymentExists(n string, obj *appsv1.Deployment) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
 		if !ok {
@@ -268,7 +268,7 @@ func testAccCheckKubernetesDeploymentExists(n string, obj *v1beta1.Deployment) r
 			return err
 		}
 
-		out, err := conn.ExtensionsV1beta1().Deployments(namespace).Get(name, meta_v1.GetOptions{})
+		out, err := conn.AppsV1().Deployments(namespace).Get(name, meta_v1.GetOptions{})
 		if err != nil {
 			return err
 		}

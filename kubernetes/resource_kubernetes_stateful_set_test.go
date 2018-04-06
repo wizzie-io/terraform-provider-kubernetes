@@ -7,9 +7,9 @@ import (
 	"github.com/hashicorp/terraform/helper/acctest"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
+	"k8s.io/api/apps/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubernetes "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/apis/apps/v1beta1"
 )
 
 func TestAccKubernetesStatefulSet_basic(t *testing.T) {
