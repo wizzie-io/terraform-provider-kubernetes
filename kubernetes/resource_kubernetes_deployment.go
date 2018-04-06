@@ -1,6 +1,7 @@
 package kubernetes
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -221,11 +222,9 @@ func resourceKubernetesDeploymentCreate(d *schema.ResourceData, meta interface{}
 }
 
 func resourceKubernetesDeploymentRead(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	// conn := meta.(*kubernetes.Clientset)
 
-	namespace, name, err := idParts(d.Id())
-	log.Printf("[INFO] Reading deployment %s", name)
-	deployment, err := conn.AppsV1().Deployments(namespace).Get(name, metav1.GetOptions{})
+	deployment, err := readDeployment(d, meta)
 	if err != nil {
 		log.Printf("[DEBUG] Received error: %#v", err)
 		return err
@@ -336,18 +335,54 @@ func resourceKubernetesDeploymentDelete(d *schema.ResourceData, meta interface{}
 }
 
 func resourceKubernetesDeploymentExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	conn := meta.(*kubernetes.Clientset)
-
-	namespace, name, err := idParts(d.Id())
+	_, name, err := idParts(d.Id())
 	log.Printf("[INFO] Checking deployment %s", name)
-	_, err = conn.AppsV1().Deployments(namespace).Get(name, metav1.GetOptions{})
+
+	_, err = readDeployment(d, meta)
 	if err != nil {
 		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
 			return false, nil
 		}
 		log.Printf("[DEBUG] Received error: %#v", err)
 	}
+
 	return true, err
+}
+
+func readDeployment(d *schema.ResourceData, meta interface{}) (*appsv1.Deployment, error) {
+	conn := meta.(*kubernetes.Clientset)
+
+	namespace, name, err := idParts(d.Id())
+	log.Printf("[INFO] Reading deployment %s", name)
+
+	// earlier versions used extensions/v1beta1 API
+	selfLink := d.Get("metadata.0.self_link").(string)
+	if strings.Contains(selfLink, "extensions/v1beta1") {
+		dep := &appsv1.Deployment{}
+
+		depbeta, err := conn.ExtensionsV1beta1().Deployments(namespace).Get(name, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+
+		// convert to V1
+		b, err := json.Marshal(&depbeta)
+		if err != nil {
+			return nil, err
+		}
+		err = json.Unmarshal(b, dep)
+		if err != nil {
+			return nil, err
+		}
+
+		return dep, nil
+	}
+
+	dep, err := conn.AppsV1().Deployments(namespace).Get(name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return dep, err
 }
 
 func waitForDeploymentReplicasFunc(conn *kubernetes.Clientset, ns, name string) resource.RetryFunc {

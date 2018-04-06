@@ -1,6 +1,7 @@
 package kubernetes
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -330,4 +331,42 @@ func migrateDaemonSetStateV0toV1(is *terraform.InstanceState) (*terraform.Instan
 
 	log.Printf("[DEBUG] Attributes after migration: %#v", is.Attributes)
 	return is, nil
+}
+
+// readDaemonSet reads a DaemonSets resource data from the Kubernetes API server
+// and handles conversion of beta resource structures to v1 structure
+func readDaemonSet(d *schema.ResourceData, meta interface{}) (*appsv1.DaemonSet, error) {
+	conn := meta.(*kubernetes.Clientset)
+
+	namespace, name, err := idParts(d.Id())
+	log.Printf("[INFO] Reading daemonSet %s", name)
+
+	// earlier versions used extensions/v1beta1 API
+	selfLink := d.Get("metadata.0.self_link").(string)
+	if strings.Contains(selfLink, "extensions/v1beta1") {
+		ds := &appsv1.DaemonSet{}
+
+		dsbeta, err := conn.ExtensionsV1beta1().DaemonSets(namespace).Get(name, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+
+		// convert to V1
+		b, err := json.Marshal(&dsbeta)
+		if err != nil {
+			return nil, err
+		}
+		err = json.Unmarshal(b, ds)
+		if err != nil {
+			return nil, err
+		}
+
+		return ds, nil
+	}
+
+	ds, err := conn.AppsV1().DaemonSets(namespace).Get(name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return ds, err
 }
