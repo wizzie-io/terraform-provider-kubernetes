@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubernetes "k8s.io/client-go/kubernetes"
 )
@@ -270,7 +271,16 @@ func testAccCheckKubernetesDeploymentExists(n string, obj *appsv1.Deployment) re
 
 		out, err := conn.AppsV1().Deployments(namespace).Get(name, meta_v1.GetOptions{})
 		if err != nil {
-			return err
+			if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
+				// try v1beta1 API
+				dep, err := conn.ExtensionsV1beta1().Deployments(namespace).Get(name, meta_v1.GetOptions{})
+				if err != nil {
+					return err
+				}
+				out, _ = convertBetaV1ToAppsV1(dep)
+			} else {
+				return err
+			}
 		}
 
 		*obj = *out
@@ -285,7 +295,7 @@ resource "kubernetes_deployment" "test" {
     name = "%s"
   }
   spec {
-		replicas = 20
+		replicas = 3
     selector {
       foo = "bar"
     }

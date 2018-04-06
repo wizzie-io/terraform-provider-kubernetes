@@ -59,7 +59,7 @@ func flattenStatefulSetUpdateStrategy(in appsv1.StatefulSetUpdateStrategy, d *sc
 func flattenStatefulSetStrategyRollingUpdate(in *appsv1.RollingUpdateStatefulSetStrategy) []interface{} {
 	att := make(map[string]interface{})
 	if in.Partition != nil {
-		att["partition"] = in.Partition
+		att["partition"] = int(*in.Partition)
 	}
 
 	return []interface{}{att}

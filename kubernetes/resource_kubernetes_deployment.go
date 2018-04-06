@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
 	appsv1 "k8s.io/api/apps/v1"
+	v1beta1 "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
@@ -196,19 +197,53 @@ func resourceKubernetesDeploymentCreate(d *schema.ResourceData, meta interface{}
 		Spec:       spec,
 	}
 
-	log.Printf("[INFO] Creating new deployment: %#v", deployment)
-	out, err := conn.AppsV1().Deployments(metadata.Namespace).Create(&deployment)
+	out := &appsv1.Deployment{}
+	if err != nil {
+		return err
+	}
+	if ServerVersionPre1_9(conn) {
+		log.Println("[INFO] Detected pre 1.9 Kubernetes API, using extensions/v1beta1 API for deployment")
+		// need to use extensions/betav1 API
+		// convert deployment to betav1
+		depB, _ := convertV1ToV1Beta1(&deployment)
+		var outB *v1beta1.Deployment
+		log.Printf("[INFO] Creating new deployment: %#v", depB)
+		outB, err = conn.ExtensionsV1beta1().Deployments(metadata.Namespace).Create(depB)
+		out, _ = convertBetaV1ToAppsV1(outB)
+
+	} else {
+		log.Printf("[INFO] Creating new deployment: %#v", deployment)
+		out, err = conn.AppsV1().Deployments(metadata.Namespace).Create(&deployment)
+	}
+
 	if err != nil {
 		return fmt.Errorf("Failed to create deployment: %s", err)
 	}
 
+	log.Printf("[INFO] Created deployment: %s", out.ObjectMeta.SelfLink)
+
 	d.SetId(buildId(out.ObjectMeta))
+	// deployment.ObjectMeta.Labels = reconcileTopLevelLabels(
+	// 	deployment.ObjectMeta.Labels,
+	// 	expandMetadata(d.Get("metadata").([]interface{})),
+	// 	expandMetadata(d.Get("spec.0.template.0.metadata").([]interface{})),
+	// )
+	// err = d.Set("metadata", flattenMetadata(out.ObjectMeta, d))
+	// if err != nil {
+	// 	return err
+	// }
 
 	log.Printf("[DEBUG] Waiting for deployment %s to schedule %d replicas",
 		d.Id(), *out.Spec.Replicas)
 	// 10 mins should be sufficient for scheduling ~10k replicas
 	err = resource.Retry(d.Timeout(schema.TimeoutCreate),
-		waitForDeploymentReplicasFunc(conn, out.GetNamespace(), out.GetName()))
+		waitForDeploymentReplicasFunc(
+			conn,
+			out.GetNamespace(),
+			out.GetName(),
+			strings.Contains(d.Get("metadata.0.self_link").(string), "extensions/v1beta1"),
+		),
+	)
 	if err != nil {
 		return err
 	}
@@ -222,9 +257,10 @@ func resourceKubernetesDeploymentCreate(d *schema.ResourceData, meta interface{}
 }
 
 func resourceKubernetesDeploymentRead(d *schema.ResourceData, meta interface{}) error {
-	// conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetes.Clientset)
 
-	deployment, err := readDeployment(d, meta)
+	namespace, name, err := idParts(d.Id())
+	deployment, err := readDeployment(conn, namespace, name)
 	if err != nil {
 		log.Printf("[DEBUG] Received error: %#v", err)
 		return err
@@ -279,12 +315,21 @@ func resourceKubernetesDeploymentUpdate(d *schema.ResourceData, meta interface{}
 	log.Printf("[INFO] Updating deployment %q: %v", name, string(data))
 	out, err := conn.AppsV1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
 	if err != nil {
-		return fmt.Errorf("Failed to update deployment: %s", err)
+		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
+			// try v1beta1 API (Kubernetes versions < 1.9)
+			betaOut, err2 := conn.ExtensionsV1beta1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
+			if err2 != nil {
+				return fmt.Errorf("Failed to update deployment: %s", err2)
+			}
+			out, _ = convertBetaV1ToAppsV1(betaOut)
+		} else {
+			return fmt.Errorf("Failed to update deployment: %s", err)
+		}
 	}
 	log.Printf("[INFO] Submitted updated deployment: %#v", out)
 
 	err = resource.Retry(d.Timeout(schema.TimeoutUpdate),
-		waitForDeploymentReplicasFunc(conn, namespace, name))
+		waitForDeploymentReplicasFunc(conn, namespace, name, strings.Contains(d.Get("metadata.0.self_link").(string), "extensions/v1beta1")))
 	if err != nil {
 		return err
 	}
@@ -308,22 +353,44 @@ func resourceKubernetesDeploymentDelete(d *schema.ResourceData, meta interface{}
 	if err != nil {
 		return err
 	}
-	_, err = conn.AppsV1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
-	if err != nil {
-		return err
+
+	if strings.Contains(d.Get("metadata.0.self_link").(string), "extensions/v1beta1") {
+		_, err = conn.ExtensionsV1beta1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
+		if err != nil {
+			return err
+		}
+
+	} else {
+		_, err = conn.AppsV1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
+		if err != nil {
+			return err
+		}
+
 	}
 
 	// Wait until all replicas are gone
 	err = resource.Retry(d.Timeout(schema.TimeoutDelete),
-		waitForDeploymentReplicasFunc(conn, namespace, name))
+		waitForDeploymentReplicasFunc(
+			conn,
+			namespace,
+			name,
+			strings.Contains(d.Get("metadata.0.self_link").(string), "extensions/v1beta1"),
+		),
+	)
 	if err != nil {
 		return err
 	}
 
 	policy := metav1.DeletePropagationForeground
-	err = conn.AppsV1().Deployments(namespace).Delete(name, &metav1.DeleteOptions{
-		PropagationPolicy: &policy,
-	})
+	if strings.Contains(d.Get("metadata.0.self_link").(string), "extensions/v1beta1") {
+		err = conn.ExtensionsV1beta1().Deployments(namespace).Delete(name, &metav1.DeleteOptions{
+			PropagationPolicy: &policy,
+		})
+	} else {
+		err = conn.AppsV1().Deployments(namespace).Delete(name, &metav1.DeleteOptions{
+			PropagationPolicy: &policy,
+		})
+	}
 	if err != nil {
 		return err
 	}
@@ -335,10 +402,12 @@ func resourceKubernetesDeploymentDelete(d *schema.ResourceData, meta interface{}
 }
 
 func resourceKubernetesDeploymentExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	_, name, err := idParts(d.Id())
+	conn := meta.(*kubernetes.Clientset)
+
+	namespace, name, err := idParts(d.Id())
 	log.Printf("[INFO] Checking deployment %s", name)
 
-	_, err = readDeployment(d, meta)
+	_, err = readDeployment(conn, namespace, name)
 	if err != nil {
 		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
 			return false, nil
@@ -349,45 +418,60 @@ func resourceKubernetesDeploymentExists(d *schema.ResourceData, meta interface{}
 	return true, err
 }
 
-func readDeployment(d *schema.ResourceData, meta interface{}) (*appsv1.Deployment, error) {
-	conn := meta.(*kubernetes.Clientset)
-
-	namespace, name, err := idParts(d.Id())
+func readDeployment(conn *kubernetes.Clientset, namespace, name string) (*appsv1.Deployment, error) {
+	// namespace, name, err := idParts(d.Id())
 	log.Printf("[INFO] Reading deployment %s", name)
 
-	// earlier versions used extensions/v1beta1 API
-	selfLink := d.Get("metadata.0.self_link").(string)
-	if strings.Contains(selfLink, "extensions/v1beta1") {
-		dep := &appsv1.Deployment{}
-
-		depbeta, err := conn.ExtensionsV1beta1().Deployments(namespace).Get(name, metav1.GetOptions{})
-		if err != nil {
-			return nil, err
-		}
-
-		// convert to V1
-		b, err := json.Marshal(&depbeta)
-		if err != nil {
-			return nil, err
-		}
-		err = json.Unmarshal(b, dep)
-		if err != nil {
-			return nil, err
-		}
-
-		return dep, nil
-	}
-
+	// first try read against the v1 API
 	dep, err := conn.AppsV1().Deployments(namespace).Get(name, metav1.GetOptions{})
 	if err != nil {
-		return nil, err
+		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
+			// try v1beta1 API (Kubernetes versions < 1.9)
+			out, err2 := conn.ExtensionsV1beta1().Deployments(namespace).Get(name, metav1.GetOptions{})
+			if err2 != nil {
+				return nil, err2
+			}
+			dep, _ = convertBetaV1ToAppsV1(out)
+		}
 	}
+	err = nil
+
 	return dep, err
 }
 
-func waitForDeploymentReplicasFunc(conn *kubernetes.Clientset, ns, name string) resource.RetryFunc {
+func convertBetaV1ToAppsV1(in *v1beta1.Deployment) (out *appsv1.Deployment, err error) {
+	out = &appsv1.Deployment{}
+	// convert to V1
+	b, err := json.Marshal(in)
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(b, out)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func convertV1ToV1Beta1(in *appsv1.Deployment) (out *v1beta1.Deployment, err error) {
+	out = &v1beta1.Deployment{}
+	// convert to V1
+	b, err := json.Marshal(in)
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(b, out)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// func waitForDeploymentReplicasFunc(conn *kubernetes.Clientset, ns, name string) resource.RetryFunc {
+func waitForDeploymentReplicasFunc(conn *kubernetes.Clientset, ns, name string, beta bool) resource.RetryFunc {
 	return func() *resource.RetryError {
-		deployment, err := conn.AppsV1().Deployments(ns).Get(name, metav1.GetOptions{})
+
+		deployment, err := readDeployment(conn, ns, name)
 		if err != nil {
 			return resource.NonRetryableError(err)
 		}

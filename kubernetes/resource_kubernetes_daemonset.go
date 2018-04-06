@@ -178,11 +178,7 @@ func resourceKubernetesDaemonSetCreate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceKubernetesDaemonSetRead(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
-
-	namespace, name, err := idParts(d.Id())
-	log.Printf("[INFO] Reading daemonset %s", name)
-	daemonset, err := conn.AppsV1().DaemonSets(namespace).Get(name, metav1.GetOptions{})
+	daemonset, err := readDaemonSet(d, meta)
 	if err != nil {
 		log.Printf("[DEBUG] Received error: %#v", err)
 		return err
@@ -194,6 +190,7 @@ func resourceKubernetesDaemonSetRead(d *schema.ResourceData, meta interface{}) e
 		expandMetadata(d.Get("metadata").([]interface{})),
 		expandMetadata(d.Get("spec.0.template.0.metadata").([]interface{})),
 	)
+	delete(daemonset.ObjectMeta.Annotations, "deprecated.daemonset.template.generation")
 
 	err = d.Set("metadata", flattenMetadata(daemonset.ObjectMeta, d))
 	if err != nil {
@@ -251,11 +248,10 @@ func resourceKubernetesDaemonSetDelete(d *schema.ResourceData, meta interface{})
 }
 
 func resourceKubernetesDaemonSetExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	conn := meta.(*kubernetes.Clientset)
-
-	namespace, name, err := idParts(d.Id())
+	_, name, err := idParts(d.Id())
 	log.Printf("[INFO] Checking daemonset %s", name)
-	_, err = conn.AppsV1().DaemonSets(namespace).Get(name, metav1.GetOptions{})
+
+	_, err = readDaemonSet(d, meta)
 	if err != nil {
 		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
 			return false, nil
