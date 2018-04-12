@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
@@ -233,16 +232,4 @@ func tryLoadingConfigFile(d *schema.ResourceData) (*restclient.Config, error) {
 
 	log.Printf("[INFO] Successfully loaded config file (%s%s)", path, ctxSuffix)
 	return cfg, nil
-}
-
-func ServerVersionPre1_9(conn *kubernetes.Clientset) bool {
-	ver, _ := conn.ServerVersion()
-	minor, _ := strconv.Atoi(string(ver.Minor[0]))
-	log.Printf("[INFO] Kubernetes Server version: %#v", ver)
-
-	if ver.Major == "1" && minor < 9 {
-		return true
-	}
-
-	return false
 }

@@ -277,7 +277,8 @@ func testAccCheckKubernetesDeploymentExists(n string, obj *appsv1.Deployment) re
 				if err != nil {
 					return err
 				}
-				out, _ = convertBetaV1ToAppsV1(dep)
+
+				Convert(dep, out)
 			} else {
 				return err
 			}
@@ -413,6 +414,7 @@ resource "kubernetes_deployment" "test" {
 
   spec {
     selector {
+			foo = "bar"
       Test = "TfAcceptanceTest"
 		}
     template {
@@ -451,6 +453,7 @@ resource "kubernetes_deployment" "test" {
 
   spec {
     selector {
+			foo = "bar"
       Test = "TfAcceptanceTest"
 		}
     template {

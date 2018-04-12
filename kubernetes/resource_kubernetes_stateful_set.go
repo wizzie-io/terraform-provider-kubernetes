@@ -3,11 +3,13 @@ package kubernetes
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
 	appsv1 "k8s.io/api/apps/v1"
+	appsv1beta1 "k8s.io/api/apps/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
@@ -162,24 +164,42 @@ func resourceKubernetesStatefulSetCreate(d *schema.ResourceData, meta interface{
 		metadata.Namespace = "default"
 	}
 
-	statefulSet := appsv1.StatefulSet{
+	statefulSetV1 := appsv1.StatefulSet{
 		ObjectMeta: metadata,
 		Spec:       spec,
 	}
 
-	log.Printf("[INFO] Creating new Stateful Set: %#v", statefulSet)
-	out, err := conn.AppsV1().StatefulSets(metadata.Namespace).Create(&statefulSet)
-	if err != nil {
-		return fmt.Errorf("Failed to create Stateful Set: %s", err)
+	outStatefulSetV1 := &appsv1.StatefulSet{}
+
+	if ServerVersionPre1_9(conn) {
+		log.Println("[INFO] Detected pre 1.9 Kubernetes API, using apps/v1beta1 API for StatefulSet")
+		// need to use extensions/betav1 API
+		// convert StatefulSet to betav1
+		statefulSetV1beta1 := &appsv1beta1.StatefulSet{}
+		Convert(&statefulSetV1, statefulSetV1beta1)
+
+		// Push StatefulSet to API, and capture resultant object
+		var outStatefulSetV1beta1 *appsv1beta1.StatefulSet
+		log.Printf("[INFO] Creating new StatefulSet: %#v", statefulSetV1beta1)
+		outStatefulSetV1beta1, err = conn.AppsV1beta1().StatefulSets(metadata.Namespace).Create(statefulSetV1beta1)
+
+		// convert returned object to stable API V1 object
+		Convert(outStatefulSetV1beta1, outStatefulSetV1)
+	} else {
+		log.Printf("[INFO] Creating new Stateful Set: %#v", statefulSetV1)
+		outStatefulSetV1, err = conn.AppsV1().StatefulSets(metadata.Namespace).Create(&statefulSetV1)
+		if err != nil {
+			return fmt.Errorf("Failed to create Stateful Set: %s", err)
+		}
 	}
 
-	d.SetId(buildId(out.ObjectMeta))
+	d.SetId(buildId(outStatefulSetV1.ObjectMeta))
 
 	log.Printf("[DEBUG] Waiting for Stateful Set %s to schedule %d replicas",
-		d.Id(), *out.Spec.Replicas)
+		d.Id(), *outStatefulSetV1.Spec.Replicas)
 	// 10 mins should be sufficient for scheduling ~10k replicas
 	err = resource.Retry(d.Timeout(schema.TimeoutCreate),
-		waitForStatefulSetReplicasFunc(conn, out.GetNamespace(), out.GetName()))
+		waitForStatefulSetReplicasFunc(conn, outStatefulSetV1.GetNamespace(), outStatefulSetV1.GetName()))
 	if err != nil {
 		return err
 	}
@@ -187,17 +207,17 @@ func resourceKubernetesStatefulSetCreate(d *schema.ResourceData, meta interface{
 	// but that means checking each pod status separately (which can be expensive at scale)
 	// as there's no aggregate data available from the API
 
-	log.Printf("[INFO] Submitted new statefulSet: %#v", out)
+	log.Printf("[INFO] Submitted new statefulSet: %#v", outStatefulSetV1)
 
 	return resourceKubernetesStatefulSetRead(d, meta)
 }
 
 func resourceKubernetesStatefulSetRead(d *schema.ResourceData, meta interface{}) error {
 	conn := meta.(*kubernetes.Clientset)
-
 	namespace, name, err := idParts(d.Id())
+
 	log.Printf("[INFO] Reading statefulSet %s", name)
-	statefulSet, err := conn.AppsV1().StatefulSets(namespace).Get(name, metav1.GetOptions{})
+	statefulSet, err := readStatefulSet(conn, namespace, name)
 	if err != nil {
 		log.Printf("[DEBUG] Received error: %#v", err)
 		return err
@@ -250,10 +270,12 @@ func resourceKubernetesStatefulSetUpdate(d *schema.ResourceData, meta interface{
 		return fmt.Errorf("Failed to marshal update operations: %s", err)
 	}
 	log.Printf("[INFO] Updating statefulSet %q: %v", name, string(data))
-	out, err := conn.AppsV1().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
+
+	out, err := patchStatefulSet(d, conn, data)
 	if err != nil {
 		return fmt.Errorf("Failed to update statefulSet: %s", err)
 	}
+
 	log.Printf("[INFO] Submitted updated statefulSet: %#v", out)
 
 	err = resource.Retry(d.Timeout(schema.TimeoutUpdate),
@@ -281,7 +303,8 @@ func resourceKubernetesStatefulSetDelete(d *schema.ResourceData, meta interface{
 	if err != nil {
 		return err
 	}
-	_, err = conn.AppsV1().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
+
+	_, err = patchStatefulSet(d, conn, data)
 	if err != nil {
 		return err
 	}
@@ -293,7 +316,11 @@ func resourceKubernetesStatefulSetDelete(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	err = conn.AppsV1().StatefulSets(namespace).Delete(name, &metav1.DeleteOptions{})
+	if strings.Contains(d.Get("metadata.0.self_link").(string), "apps/v1beta1") {
+		err = conn.AppsV1beta1().StatefulSets(namespace).Delete(name, &metav1.DeleteOptions{})
+	} else {
+		err = conn.AppsV1().StatefulSets(namespace).Delete(name, &metav1.DeleteOptions{})
+	}
 	if err != nil {
 		return err
 	}
@@ -313,7 +340,7 @@ func resourceKubernetesStatefulSetExists(d *schema.ResourceData, meta interface{
 	}
 
 	log.Printf("[INFO] Checking statefulSet %s", name)
-	_, err = conn.AppsV1().StatefulSets(namespace).Get(name, metav1.GetOptions{})
+	_, err = readStatefulSet(conn, namespace, name)
 	if err != nil {
 		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
 			return false, nil
@@ -323,9 +350,54 @@ func resourceKubernetesStatefulSetExists(d *schema.ResourceData, meta interface{
 	return true, err
 }
 
+func patchStatefulSet(d *schema.ResourceData, conn *kubernetes.Clientset, data []byte) (ss *appsv1.StatefulSet, err error) {
+	ss = &appsv1.StatefulSet{}
+
+	namespace, name, err := idParts(d.Id())
+	if strings.Contains(d.Get("metadata.0.self_link").(string), "apps/v1beta1") {
+		ssV1beta1 := &appsv1beta1.StatefulSet{}
+
+		ssV1beta1, err = conn.AppsV1beta1().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
+		if err != nil {
+			return
+		}
+
+		Convert(ssV1beta1, ss)
+
+	} else {
+		ss, err = conn.AppsV1().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
+		if err != nil {
+			return
+		}
+
+	}
+	return
+}
+
+func readStatefulSet(conn *kubernetes.Clientset, namespace, name string) (*appsv1.StatefulSet, error) {
+	log.Printf("[INFO] Reading StatefulSet %s", name)
+
+	// first try read against the v1 API
+	dep, err := conn.AppsV1().StatefulSets(namespace).Get(name, metav1.GetOptions{})
+	if err != nil {
+		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
+			// try v1beta1 API (Kubernetes versions < 1.9)
+			out, err2 := conn.AppsV1beta1().StatefulSets(namespace).Get(name, metav1.GetOptions{})
+			if err2 != nil {
+				return nil, err2
+			}
+
+			Convert(out, dep)
+		}
+	}
+	err = nil
+
+	return dep, err
+}
+
 func waitForStatefulSetReplicasFunc(conn *kubernetes.Clientset, ns, name string) resource.RetryFunc {
 	return func() *resource.RetryError {
-		statefulSet, err := conn.AppsV1().StatefulSets(ns).Get(name, metav1.GetOptions{})
+		statefulSet, err := readStatefulSet(conn, ns, name)
 		if err != nil {
 			return resource.NonRetryableError(err)
 		}
