@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
@@ -353,13 +352,11 @@ func readDaemonSet(conn *kubernetes.Clientset, namespace, name string) (dset *v1
 func resourceKubernetesDaemonSetUpdate(d *schema.ResourceData, meta interface{}) error {
 	conn := meta.(*kubernetes.Clientset)
 	namespace, name, err := idParts(d.Id())
-	current, err := readDaemonSet(conn, namespace, name)
 
 	daemonset, err := buildDaemonSetObject(d)
 	if err != nil {
 		return err
 	}
-	daemonset.ObjectMeta.SelfLink = current.ObjectMeta.SelfLink
 
 	log.Printf("[INFO] Updating daemonset: %q", name)
 	out := &v1.DaemonSet{}
@@ -389,13 +386,9 @@ func resourceKubernetesDaemonSetUpdate(d *schema.ResourceData, meta interface{})
 		if err != nil {
 			break
 		}
-		//printObjectJSON(daemonset)
-		printObjectJSON(current)
-		printObjectJSON(beta)
 
 		betaOut, err2 := conn.ExtensionsV1beta1().DaemonSets(namespace).Update(beta)
 		if err != nil {
-			fmt.Printf("V1:\n%s\n\nBeta:%s\n", spew.Sdump(daemonset), spew.Sdump(beta))
 			err = err2
 			break
 		}

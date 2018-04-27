@@ -68,17 +68,6 @@ func expandDaemonSetSpec(deployment []interface{}) (appsv1.DaemonSetSpec, error)
 	}
 	obj.UpdateStrategy = expandDaemonSetStrategy(in["strategy"].([]interface{}))
 
-	// podSpec, err := expandPodSpec(in["template"].([]interface{}))
-	// if err != nil {
-	// 	return obj, err
-	// }
-	// obj.Template = v1.PodTemplateSpec{
-	// 	ObjectMeta: metav1.ObjectMeta{
-	// 		Labels: obj.Selector.MatchLabels,
-	// 	},
-	// 	Spec: podSpec,
-	// }
-
 	for _, v := range in["template"].([]interface{}) {
 		template := v.(map[string]interface{})
 		podSpec, err := expandPodSpec(template["spec"].([]interface{}))
@@ -102,6 +91,7 @@ func expandDaemonSetStrategy(p []interface{}) appsv1.DaemonSetUpdateStrategy {
 	obj := appsv1.DaemonSetUpdateStrategy{}
 
 	if len(p) == 0 || p[0] == nil {
+		obj.Type = appsv1.RollingUpdateDaemonSetStrategyType
 		return obj
 	}
 	in := p[0].(map[string]interface{})
