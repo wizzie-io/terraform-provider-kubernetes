@@ -1,19 +1,28 @@
 package kubernetes
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
+	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
-	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/api/apps/v1"
+	"k8s.io/api/apps/v1beta2"
+	"k8s.io/api/extensions/v1beta1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubernetes "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes"
 )
+
+const daemonSetResourceGroupName = "daemonsets"
+
+var daemonSetAPIGroups = []APIGroup{appsV1, appsV1beta2, extensionsV1beta1}
+var daemonSetNotSupportedError = errors.New("could not find Kubernetes API group that supports DaemonSet resources")
 
 func resourceKubernetesDaemonSet() *schema.Resource {
 	return &schema.Resource{
@@ -58,14 +67,14 @@ func resourceKubernetesDaemonSet() *schema.Resource {
 							Type:        schema.TypeList,
 							Optional:    true,
 							Computed:    true,
-							Description: "Update strategy. One of RollingUpdate, Destroy. Defaults to RollingDate",
+							Description: "Update strategy. One of RollingUpdate, Destroy. Defaults to RollingUpdate",
 							MaxItems:    1,
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
 									"type": {
 										Type:        schema.TypeString,
 										Optional:    true,
-										Computed:    true,
+										Default:     "RollingUpdate",
 										Description: "Update strategy",
 									},
 									"rolling_update": {
@@ -138,7 +147,7 @@ func resourceKubernetesDaemonSet() *schema.Resource {
 	}
 }
 
-func buildDaemonSetObject(d *schema.ResourceData) (*appsv1.DaemonSet, error) {
+func buildDaemonSetObject(d *schema.ResourceData) (*v1.DaemonSet, error) {
 	metadata := expandMetadata(d.Get("metadata").([]interface{}))
 	spec, err := expandDaemonSetSpec(d.Get("spec").([]interface{}))
 	if err != nil {
@@ -148,7 +157,7 @@ func buildDaemonSetObject(d *schema.ResourceData) (*appsv1.DaemonSet, error) {
 		metadata.Namespace = "default"
 	}
 
-	daemonset := appsv1.DaemonSet{
+	daemonset := v1.DaemonSet{
 		ObjectMeta: metadata,
 		Spec:       spec,
 	}
@@ -164,8 +173,27 @@ func resourceKubernetesDaemonSetCreate(d *schema.ResourceData, meta interface{})
 		return err
 	}
 
+	out := &v1.DaemonSet{}
 	log.Printf("[INFO] Creating new daemonset: %#v", daemonset)
-	out, err := conn.AppsV1().DaemonSets(daemonset.ObjectMeta.Namespace).Create(daemonset)
+	switch highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...) {
+	case appsV1:
+		out, err = conn.AppsV1().DaemonSets(daemonset.ObjectMeta.Namespace).Create(daemonset)
+
+	case appsV1beta2:
+		dsBeta := &v1beta2.DaemonSet{}
+		Convert(daemonset, dsBeta)
+		dsBeta, err = conn.AppsV1beta2().DaemonSets(daemonset.ObjectMeta.Namespace).Create(dsBeta)
+		Convert(dsBeta, out)
+
+	case extensionsV1beta1:
+		dsBeta := &v1beta1.DaemonSet{}
+		Convert(daemonset, dsBeta)
+		dsBeta, err = conn.ExtensionsV1beta1().DaemonSets(daemonset.ObjectMeta.Namespace).Create(dsBeta)
+		Convert(dsBeta, out)
+
+	default:
+		err = daemonSetNotSupportedError
+	}
 	if err != nil {
 		return fmt.Errorf("Failed to create daemonset: %s", err)
 	}
@@ -178,7 +206,10 @@ func resourceKubernetesDaemonSetCreate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceKubernetesDaemonSetRead(d *schema.ResourceData, meta interface{}) error {
-	daemonset, err := readDaemonSet(d, meta)
+	conn := meta.(*kubernetes.Clientset)
+	namespace, name, err := idParts(d.Id())
+
+	daemonset, err := readDaemonSet(conn, namespace, name)
 	if err != nil {
 		log.Printf("[DEBUG] Received error: %#v", err)
 		return err
@@ -190,7 +221,6 @@ func resourceKubernetesDaemonSetRead(d *schema.ResourceData, meta interface{}) e
 		expandMetadata(d.Get("metadata").([]interface{})),
 		expandMetadata(d.Get("spec.0.template.0.metadata").([]interface{})),
 	)
-	delete(daemonset.ObjectMeta.Annotations, "deprecated.daemonset.template.generation")
 
 	err = d.Set("metadata", flattenMetadata(daemonset.ObjectMeta, d))
 	if err != nil {
@@ -210,21 +240,184 @@ func resourceKubernetesDaemonSetRead(d *schema.ResourceData, meta interface{}) e
 	return nil
 }
 
+func readDaemonSet(conn *kubernetes.Clientset, namespace, name string) (dset *v1.DaemonSet, err error) {
+	log.Printf("[INFO] Reading DaemonSet %s", name)
+	dset = &v1.DaemonSet{}
+
+	switch highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...) {
+	case appsV1:
+		dset, err = conn.AppsV1().DaemonSets(namespace).Get(name, metav1.GetOptions{})
+		return dset, err
+
+	case appsV1beta2:
+		out := &v1beta2.DaemonSet{}
+		out, err = conn.AppsV1beta2().DaemonSets(namespace).Get(name, metav1.GetOptions{})
+		if err != nil {
+			break
+		}
+		err = Convert(out, dset)
+
+	case extensionsV1beta1:
+		out := &v1beta1.DaemonSet{}
+		out, err = conn.ExtensionsV1beta1().DaemonSets(namespace).Get(name, metav1.GetOptions{})
+		if err != nil {
+			break
+		}
+		err = Convert(out, dset)
+
+	default:
+		return nil, daemonSetNotSupportedError
+	}
+
+	return dset, err
+}
+
+//func resourceKubernetesDaemonSetUpdate(d *schema.ResourceData, meta interface{}) error {
+//	conn := meta.(*kubernetes.Clientset)
+//
+//	namespace, name, err := idParts(d.Id())
+//
+//	ops := patchMetadata("metadata.0.", "/metadata/", d)
+//
+//	if d.HasChange("spec") {
+//		spec, err := expandDaemonSetSpec(d.Get("spec").([]interface{}))
+//		if err != nil {
+//			return err
+//		}
+//
+//		ops = append(ops, &ReplaceOperation{
+//			Path:  "/spec",
+//			Value: spec,
+//		})
+//	}
+//	data, err := ops.MarshalJSON()
+//	if err != nil {
+//		return fmt.Errorf("Failed to marshal update operations: %s", err)
+//	}
+//	log.Printf("[INFO] Updating DaemonSet %q: %v", name, string(data))
+//
+//	out, err := patchDaemonSet(d, conn, data)
+//	if err != nil {
+//		return fmt.Errorf("Failed to update DaemonSet: %s", err)
+//	}
+//
+//	log.Printf("[INFO] Submitted updated DaemonSet: %#v", out)
+//
+//	err = resource.Retry(d.Timeout(schema.TimeoutUpdate),
+//		waitForDaemonSetReplicasFunc(conn, namespace, name))
+//	if err != nil {
+//		return err
+//	}
+//
+//	return resourceKubernetesStatefulSetRead(d, meta)
+//}
+//
+//func patchDaemonSet(d *schema.ResourceData, conn *kubernetes.Clientset, data []byte) (ss *v1.DaemonSet, err error) {
+//	ss = &v1.DaemonSet{}
+//	namespace, name, err := idParts(d.Id())
+//
+//	switch highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...) {
+//	case appsV1:
+//		ss, err = conn.AppsV1().DaemonSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
+//		if err != nil {
+//			return
+//		}
+//
+//	case appsV1beta2:
+//		beta := &v1beta2.DaemonSet{}
+//
+//		beta, err = conn.AppsV1beta2().DaemonSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
+//		if err != nil {
+//			return
+//		}
+//
+//		Convert(beta, ss)
+//
+//	case extensionsV1beta1:
+//		beta := &v1beta1.DaemonSet{}
+//
+//		beta, err = conn.ExtensionsV1beta1().DaemonSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
+//		if err != nil {
+//			return
+//		}
+//
+//		Convert(beta, ss)
+//
+//	default:
+//		err = statefulSetNotSupportedError
+//	}
+//
+//	return
+//}
+
 func resourceKubernetesDaemonSetUpdate(d *schema.ResourceData, meta interface{}) error {
 	conn := meta.(*kubernetes.Clientset)
 	namespace, name, err := idParts(d.Id())
+	current, err := readDaemonSet(conn, namespace, name)
 
 	daemonset, err := buildDaemonSetObject(d)
 	if err != nil {
 		return err
 	}
+	daemonset.ObjectMeta.SelfLink = current.ObjectMeta.SelfLink
 
 	log.Printf("[INFO] Updating daemonset: %q", name)
-	out, err := conn.AppsV1().DaemonSets(namespace).Update(daemonset)
+	out := &v1.DaemonSet{}
+	switch highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...) {
+	case appsV1:
+		out, err = conn.AppsV1().DaemonSets(namespace).Update(daemonset)
+
+	case appsV1beta2:
+		beta := &v1beta2.DaemonSet{}
+		err = Convert(daemonset, beta)
+		if err != nil {
+			break
+		}
+		betaOut, err2 := conn.AppsV1beta2().DaemonSets(namespace).Update(beta)
+		if err2 != nil {
+			err = err2
+			break
+		}
+		err = Convert(betaOut, out)
+		if err != nil {
+			break
+		}
+
+	case extensionsV1beta1:
+		beta := &v1beta1.DaemonSet{}
+		err = Convert(daemonset, beta)
+		if err != nil {
+			break
+		}
+		//printObjectJSON(daemonset)
+		printObjectJSON(current)
+		printObjectJSON(beta)
+
+		betaOut, err2 := conn.ExtensionsV1beta1().DaemonSets(namespace).Update(beta)
+		if err != nil {
+			fmt.Printf("V1:\n%s\n\nBeta:%s\n", spew.Sdump(daemonset), spew.Sdump(beta))
+			err = err2
+			break
+		}
+		err = Convert(betaOut, out)
+		if err != nil {
+			break
+		}
+
+	default:
+		err = daemonSetNotSupportedError
+	}
+
 	if err != nil {
 		return fmt.Errorf("Failed to update daemonset: %s", err)
 	}
 	log.Printf("[INFO] Submitted updated daemonset: %#v", out)
+
+	err = resource.Retry(d.Timeout(schema.TimeoutUpdate),
+		waitForDaemonSetReplicasFunc(conn, namespace, name))
+	if err != nil {
+		return err
+	}
 
 	return resourceKubernetesDaemonSetRead(d, meta)
 }
@@ -238,8 +431,17 @@ func resourceKubernetesDaemonSetDelete(d *schema.ResourceData, meta interface{})
 	}
 	log.Printf("[INFO] Deleting daemonset: %#v", name)
 
-	falseVar := false
-	conn.AppsV1().DaemonSets(namespace).Delete(name, &metav1.DeleteOptions{OrphanDependents: &falseVar})
+	policy := metav1.DeletePropagationForeground
+	switch highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...) {
+	case appsV1:
+		conn.AppsV1().DaemonSets(namespace).Delete(name, &metav1.DeleteOptions{PropagationPolicy: &policy})
+	case appsV1beta2:
+		conn.AppsV1beta2().DaemonSets(namespace).Delete(name, &metav1.DeleteOptions{PropagationPolicy: &policy})
+	case extensionsV1beta1:
+		conn.ExtensionsV1beta1().DaemonSets(namespace).Delete(name, &metav1.DeleteOptions{PropagationPolicy: &policy})
+	default:
+		err = daemonSetNotSupportedError
+	}
 
 	log.Printf("[INFO] DaemonSet %s deleted", name)
 
@@ -248,12 +450,13 @@ func resourceKubernetesDaemonSetDelete(d *schema.ResourceData, meta interface{})
 }
 
 func resourceKubernetesDaemonSetExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	_, name, err := idParts(d.Id())
+	conn := meta.(*kubernetes.Clientset)
+	namespace, name, err := idParts(d.Id())
 	log.Printf("[INFO] Checking daemonset %s", name)
 
-	_, err = readDaemonSet(d, meta)
+	_, err = readDaemonSet(conn, namespace, name)
 	if err != nil {
-		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
+		if statusErr, ok := err.(*kerrors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
 			return false, nil
 		}
 		log.Printf("[DEBUG] Received error: %#v", err)
@@ -329,40 +532,22 @@ func migrateDaemonSetStateV0toV1(is *terraform.InstanceState) (*terraform.Instan
 	return is, nil
 }
 
-// readDaemonSet reads a DaemonSets resource data from the Kubernetes API server
-// and handles conversion of beta resource structures to v1 structure
-func readDaemonSet(d *schema.ResourceData, meta interface{}) (*appsv1.DaemonSet, error) {
-	conn := meta.(*kubernetes.Clientset)
-
-	namespace, name, err := idParts(d.Id())
-	log.Printf("[INFO] Reading daemonSet %s", name)
-
-	// earlier versions used extensions/v1beta1 API
-	selfLink := d.Get("metadata.0.self_link").(string)
-	if strings.Contains(selfLink, "extensions/v1beta1") {
-		ds := &appsv1.DaemonSet{}
-
-		dsbeta, err := conn.ExtensionsV1beta1().DaemonSets(namespace).Get(name, metav1.GetOptions{})
+func waitForDaemonSetReplicasFunc(conn *kubernetes.Clientset, ns, name string) resource.RetryFunc {
+	return func() *resource.RetryError {
+		daemonSet, err := readDaemonSet(conn, ns, name)
 		if err != nil {
-			return nil, err
+			return resource.NonRetryableError(err)
 		}
 
-		// convert to V1
-		b, err := json.Marshal(&dsbeta)
-		if err != nil {
-			return nil, err
-		}
-		err = json.Unmarshal(b, ds)
-		if err != nil {
-			return nil, err
+		desiredReplicas := daemonSet.Status.DesiredNumberScheduled
+		log.Printf("[DEBUG] Current number of labelled replicas of %q: %d (of %d)\n",
+			daemonSet.GetName(), daemonSet.Status.CurrentNumberScheduled, desiredReplicas)
+
+		if daemonSet.Status.CurrentNumberScheduled == desiredReplicas {
+			return nil
 		}
 
-		return ds, nil
+		return resource.RetryableError(fmt.Errorf("Waiting for %d replicas of %q to be scheduled (%d)",
+			desiredReplicas, daemonSet.GetName(), daemonSet.Status.CurrentNumberScheduled))
 	}
-
-	ds, err := conn.AppsV1().DaemonSets(namespace).Get(name, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return ds, err
 }

@@ -134,9 +134,10 @@ func TestAccKubernetesDeployment_importBasic(t *testing.T) {
 				Config: testAccKubernetesDeploymentConfig_basic(name),
 			},
 			{
-				ResourceName:      resourceName,
-				ImportState:       true,
-				ImportStateVerify: true,
+				ResourceName:            resourceName,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"metadata.0.resource_version"},
 			},
 		},
 	})

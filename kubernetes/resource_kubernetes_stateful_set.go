@@ -1,20 +1,26 @@
 package kubernetes
 
 import (
+	errs "errors"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
-	appsv1 "k8s.io/api/apps/v1"
-	appsv1beta1 "k8s.io/api/apps/v1beta1"
+	"k8s.io/api/apps/v1"
+	"k8s.io/api/apps/v1beta1"
+	"k8s.io/api/apps/v1beta2"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
 	kubernetes "k8s.io/client-go/kubernetes"
 )
+
+const statefulSetResourceGroupName = "statefulsets"
+
+var statefulSetAPIGroups = []APIGroup{appsV1, appsV1beta2, appsV1beta1}
+var statefulSetNotSupportedError = errs.New("could not find Kubernetes API group that supports StatefulSet resources")
 
 func resourceKubernetesStatefulSet() *schema.Resource {
 	return &schema.Resource{
@@ -164,33 +170,39 @@ func resourceKubernetesStatefulSetCreate(d *schema.ResourceData, meta interface{
 		metadata.Namespace = "default"
 	}
 
-	statefulSetV1 := appsv1.StatefulSet{
+	statefulSetV1 := v1.StatefulSet{
 		ObjectMeta: metadata,
 		Spec:       spec,
 	}
 
-	outStatefulSetV1 := &appsv1.StatefulSet{}
+	outStatefulSetV1 := &v1.StatefulSet{}
 
+	log.Printf("[INFO] Creating new Stateful Set: %#v", statefulSetV1)
+	switch highestSupportedAPIGroup(statefulSetResourceGroupName, statefulSetAPIGroups...) {
+	case appsV1:
+		outStatefulSetV1, err = conn.AppsV1().StatefulSets(metadata.Namespace).Create(&statefulSetV1)
+
+	case appsV1beta2:
+		beta := &v1beta2.StatefulSet{}
+		Convert(statefulSetV1, beta)
+		beta, err = conn.AppsV1beta2().StatefulSets(beta.ObjectMeta.Namespace).Create(beta)
+		Convert(beta, outStatefulSetV1)
+
+	case appsV1beta1:
+		beta := &v1beta1.StatefulSet{}
+		Convert(statefulSetV1, beta)
+		beta, err = conn.AppsV1beta1().StatefulSets(beta.ObjectMeta.Namespace).Create(beta)
+		Convert(beta, outStatefulSetV1)
+
+	default:
+		err = statefulSetNotSupportedError
+	}
 	if ServerVersionPre1_9(conn) {
 		log.Println("[INFO] Detected pre 1.9 Kubernetes API, using apps/v1beta1 API for StatefulSet")
-		// need to use extensions/betav1 API
-		// convert StatefulSet to betav1
-		statefulSetV1beta1 := &appsv1beta1.StatefulSet{}
-		Convert(&statefulSetV1, statefulSetV1beta1)
 
-		// Push StatefulSet to API, and capture resultant object
-		var outStatefulSetV1beta1 *appsv1beta1.StatefulSet
-		log.Printf("[INFO] Creating new StatefulSet: %#v", statefulSetV1beta1)
-		outStatefulSetV1beta1, err = conn.AppsV1beta1().StatefulSets(metadata.Namespace).Create(statefulSetV1beta1)
-
-		// convert returned object to stable API V1 object
-		Convert(outStatefulSetV1beta1, outStatefulSetV1)
-	} else {
-		log.Printf("[INFO] Creating new Stateful Set: %#v", statefulSetV1)
-		outStatefulSetV1, err = conn.AppsV1().StatefulSets(metadata.Namespace).Create(&statefulSetV1)
-		if err != nil {
-			return fmt.Errorf("Failed to create Stateful Set: %s", err)
-		}
+	}
+	if err != nil {
+		return fmt.Errorf("Failed to create Stateful Set: %s", err)
 	}
 
 	d.SetId(buildId(outStatefulSetV1.ObjectMeta))
@@ -316,11 +328,17 @@ func resourceKubernetesStatefulSetDelete(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	if strings.Contains(d.Get("metadata.0.self_link").(string), "apps/v1beta1") {
-		err = conn.AppsV1beta1().StatefulSets(namespace).Delete(name, &metav1.DeleteOptions{})
-	} else {
+	switch highestSupportedAPIGroup(statefulSetResourceGroupName, statefulSetAPIGroups...) {
+	case appsV1:
 		err = conn.AppsV1().StatefulSets(namespace).Delete(name, &metav1.DeleteOptions{})
+	case appsV1beta2:
+		err = conn.AppsV1beta2().StatefulSets(namespace).Delete(name, &metav1.DeleteOptions{})
+	case appsV1beta1:
+		err = conn.AppsV1beta1().StatefulSets(namespace).Delete(name, &metav1.DeleteOptions{})
+	default:
+		err = statefulSetNotSupportedError
 	}
+
 	if err != nil {
 		return err
 	}
@@ -350,49 +368,71 @@ func resourceKubernetesStatefulSetExists(d *schema.ResourceData, meta interface{
 	return true, err
 }
 
-func patchStatefulSet(d *schema.ResourceData, conn *kubernetes.Clientset, data []byte) (ss *appsv1.StatefulSet, err error) {
-	ss = &appsv1.StatefulSet{}
-
+func patchStatefulSet(d *schema.ResourceData, conn *kubernetes.Clientset, data []byte) (ss *v1.StatefulSet, err error) {
+	ss = &v1.StatefulSet{}
 	namespace, name, err := idParts(d.Id())
-	if strings.Contains(d.Get("metadata.0.self_link").(string), "apps/v1beta1") {
-		ssV1beta1 := &appsv1beta1.StatefulSet{}
 
-		ssV1beta1, err = conn.AppsV1beta1().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
-		if err != nil {
-			return
-		}
-
-		Convert(ssV1beta1, ss)
-
-	} else {
+	switch highestSupportedAPIGroup(statefulSetResourceGroupName, statefulSetAPIGroups...) {
+	case appsV1:
 		ss, err = conn.AppsV1().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
 		if err != nil {
 			return
 		}
 
+	case appsV1beta2:
+		beta := &v1beta2.StatefulSet{}
+
+		beta, err = conn.AppsV1beta2().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
+		if err != nil {
+			return
+		}
+
+		Convert(beta, ss)
+
+	case appsV1beta1:
+		beta := &v1beta1.StatefulSet{}
+
+		beta, err = conn.AppsV1beta1().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
+		if err != nil {
+			return
+		}
+
+		Convert(beta, ss)
+
+	default:
+		err = statefulSetNotSupportedError
 	}
+
 	return
 }
 
-func readStatefulSet(conn *kubernetes.Clientset, namespace, name string) (*appsv1.StatefulSet, error) {
+func readStatefulSet(conn *kubernetes.Clientset, namespace, name string) (ss *v1.StatefulSet, err error) {
 	log.Printf("[INFO] Reading StatefulSet %s", name)
+	ss = &v1.StatefulSet{}
 
-	// first try read against the v1 API
-	dep, err := conn.AppsV1().StatefulSets(namespace).Get(name, metav1.GetOptions{})
-	if err != nil {
-		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
-			// try v1beta1 API (Kubernetes versions < 1.9)
-			out, err2 := conn.AppsV1beta1().StatefulSets(namespace).Get(name, metav1.GetOptions{})
-			if err2 != nil {
-				return nil, err2
-			}
+	switch highestSupportedAPIGroup(statefulSetResourceGroupName, statefulSetAPIGroups...) {
+	case appsV1:
+		ss, err = conn.AppsV1().StatefulSets(namespace).Get(name, metav1.GetOptions{})
 
-			Convert(out, dep)
+	case appsV1beta2:
+		beta := &v1beta2.StatefulSet{}
+		beta, err = conn.AppsV1beta2().StatefulSets(namespace).Get(name, metav1.GetOptions{})
+		if err == nil {
+			Convert(beta, ss)
 		}
-	}
-	err = nil
 
-	return dep, err
+	case appsV1beta1:
+		beta := &v1beta1.StatefulSet{}
+		beta, err = conn.AppsV1beta1().StatefulSets(namespace).Get(name, metav1.GetOptions{})
+		if err == nil {
+			Convert(beta, ss)
+		}
+
+	default:
+		err = statefulSetNotSupportedError
+	}
+
+	return ss, err
 }
 
 func waitForStatefulSetReplicasFunc(conn *kubernetes.Clientset, ns, name string) resource.RetryFunc {
@@ -402,11 +442,11 @@ func waitForStatefulSetReplicasFunc(conn *kubernetes.Clientset, ns, name string)
 			return resource.NonRetryableError(err)
 		}
 
-		desiredReplicas := *statefulSet.Spec.Replicas
+		desiredReplicas := statefulSet.Spec.Replicas
 		log.Printf("[DEBUG] Current number of labelled replicas of %q: %d (of %d)\n",
 			statefulSet.GetName(), statefulSet.Status.Replicas, desiredReplicas)
 
-		if statefulSet.Status.Replicas == desiredReplicas {
+		if statefulSet.Status.Replicas == *desiredReplicas {
 			return nil
 		}
 

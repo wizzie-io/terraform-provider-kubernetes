@@ -164,6 +164,8 @@ func isInternalKey(annotationKey string) bool {
 	if err == nil && strings.Contains(u.Hostname(), "kubernetes.io") {
 		log.Printf("[DEBUG] %s is internal key", annotationKey)
 		return true
+	} else if strings.Contains(annotationKey, "deprecated.daemonset.template.generation") {
+		return true
 	}
 
 	return false

@@ -1,6 +1,7 @@
 package kubernetes
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -10,12 +11,17 @@ import (
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
 	appsv1 "k8s.io/api/apps/v1"
-	v1beta1 "k8s.io/api/extensions/v1beta1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/api/extensions/v1beta1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
-	kubernetes "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes"
 )
+
+const deploymentsResourceGroupName = "deployments"
+
+var deploymentsAPIGroups = []APIGroup{appsV1, extensionsV1beta1}
+var deploymentNotSupportedError = errors.New("could not find Kubernetes API group that supports Deployment resources")
 
 func resourceKubernetesDeployment() *schema.Resource {
 	return &schema.Resource{
@@ -174,7 +180,7 @@ func relocatedAttribute(name string) *schema.Schema {
 	s := &schema.Schema{
 		Type:     schema.TypeString,
 		Optional: true,
-		Removed:  fmt.Sprintf("%s has been relocated to [resource]/spec/template/spec/%s. Please update your Terraform config.", name, name),
+		Removed:  fmt.Sprintf("%s has been relocated to [resource].spec.template.spec.%s. Please update your Terraform config.", name, name),
 	}
 	return s
 }
@@ -198,26 +204,29 @@ func resourceKubernetesDeploymentCreate(d *schema.ResourceData, meta interface{}
 
 	outDeploymentV1 := &appsv1.Deployment{}
 
-	if ServerVersionPre1_9(conn) {
-		log.Println("[INFO] Detected pre 1.9 Kubernetes API, using extensions/v1beta1 API for deployment")
-		// need to use extensions/betav1 API
-		// convert deployment to betav1
+	log.Printf("[INFO] Creating new deployment: %#v", deployment)
+	switch highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...) {
+	case appsV1:
+		outDeploymentV1, err = conn.AppsV1().Deployments(metadata.Namespace).Create(&deployment)
+
+	case extensionsV1beta1:
+		// convert deployment to v1betav1
 		deploymentV1beta1 := &v1beta1.Deployment{}
 		Convert(&deployment, deploymentV1beta1)
 
 		// Push deployment to API, and capture resultant object
 		var outDeploymentV1beta1 *v1beta1.Deployment
-		log.Printf("[INFO] Creating new deployment: %#v", deploymentV1beta1)
 		outDeploymentV1beta1, err = conn.ExtensionsV1beta1().Deployments(metadata.Namespace).Create(deploymentV1beta1)
+		if err != nil {
+			break
+		}
 
-		// convert returned object to stable API V1 object
+		// convert returned object to v1 API object
 		Convert(outDeploymentV1beta1, outDeploymentV1)
 
-	} else {
-		log.Printf("[INFO] Creating new deployment: %#v", deployment)
-		outDeploymentV1, err = conn.AppsV1().Deployments(metadata.Namespace).Create(&deployment)
+	default:
+		err = deploymentNotSupportedError
 	}
-
 	if err != nil {
 		return fmt.Errorf("Failed to create deployment: %s", err)
 	}
@@ -293,7 +302,6 @@ func resourceKubernetesDeploymentRead(d *schema.ResourceData, meta interface{}) 
 
 func resourceKubernetesDeploymentUpdate(d *schema.ResourceData, meta interface{}) error {
 	conn := meta.(*kubernetes.Clientset)
-
 	namespace, name, err := idParts(d.Id())
 
 	ops := patchMetadata("metadata.0.", "/metadata/", d)
@@ -316,21 +324,10 @@ func resourceKubernetesDeploymentUpdate(d *schema.ResourceData, meta interface{}
 	log.Printf("[INFO] Updating deployment %q: %v", name, string(data))
 
 	out, err := resourceKubernetesPatchDeployment(d, conn, data)
+	if err != nil {
+		return err
+	}
 
-	// out, err := conn.AppsV1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
-	// if err != nil {
-	// 	if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
-	// 		// try v1beta1 API (Kubernetes versions < 1.9)
-	// 		betaOut, err2 := conn.ExtensionsV1beta1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
-	// 		if err2 != nil {
-	// 			return fmt.Errorf("Failed to update deployment: %s", err2)
-	// 		}
-	// 		Convert(betaOut, out)
-
-	// 	} else {
-	// 		return fmt.Errorf("Failed to update deployment: %s", err)
-	// 	}
-	// }
 	log.Printf("[INFO] Submitted updated deployment: %#v", out)
 
 	err = resource.Retry(d.Timeout(schema.TimeoutUpdate),
@@ -346,7 +343,14 @@ func resourceKubernetesPatchDeployment(d *schema.ResourceData, conn *kubernetes.
 	deployment = &appsv1.Deployment{}
 
 	namespace, name, err := idParts(d.Id())
-	if strings.Contains(d.Get("metadata.0.self_link").(string), "extensions/v1beta1") {
+	switch highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...) {
+	case appsV1:
+		deployment, err = conn.AppsV1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
+		if err != nil {
+			return
+		}
+
+	case extensionsV1beta1:
 		deploymentV1beta1 := &v1beta1.Deployment{}
 
 		deploymentV1beta1, err = conn.ExtensionsV1beta1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
@@ -356,13 +360,10 @@ func resourceKubernetesPatchDeployment(d *schema.ResourceData, conn *kubernetes.
 
 		Convert(deploymentV1beta1, deployment)
 
-	} else {
-		deployment, err = conn.AppsV1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
-		if err != nil {
-			return
-		}
-
+	default:
+		err = deploymentNotSupportedError
 	}
+
 	return
 }
 
@@ -400,17 +401,17 @@ func resourceKubernetesDeploymentDelete(d *schema.ResourceData, meta interface{}
 	}
 
 	policy := metav1.DeletePropagationForeground
-	if strings.Contains(d.Get("metadata.0.self_link").(string), "extensions/v1beta1") {
-		err = conn.ExtensionsV1beta1().Deployments(namespace).Delete(name, &metav1.DeleteOptions{
-			PropagationPolicy: &policy,
-		})
-	} else {
+	switch highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...) {
+	case appsV1:
 		err = conn.AppsV1().Deployments(namespace).Delete(name, &metav1.DeleteOptions{
 			PropagationPolicy: &policy,
 		})
-	}
-	if err != nil {
-		return err
+	case extensionsV1beta1:
+		err = conn.ExtensionsV1beta1().Deployments(namespace).Delete(name, &metav1.DeleteOptions{
+			PropagationPolicy: &policy,
+		})
+	default:
+		err = deploymentNotSupportedError
 	}
 
 	log.Printf("[INFO] Deployment %s deleted", name)
@@ -427,7 +428,7 @@ func resourceKubernetesDeploymentExists(d *schema.ResourceData, meta interface{}
 
 	_, err = readDeployment(conn, namespace, name)
 	if err != nil {
-		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
+		if statusErr, ok := err.(*kerrors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
 			return false, nil
 		}
 		log.Printf("[DEBUG] Received error: %#v", err)
@@ -436,24 +437,25 @@ func resourceKubernetesDeploymentExists(d *schema.ResourceData, meta interface{}
 	return true, err
 }
 
-func readDeployment(conn *kubernetes.Clientset, namespace, name string) (*appsv1.Deployment, error) {
-	// namespace, name, err := idParts(d.Id())
+func readDeployment(conn *kubernetes.Clientset, namespace, name string) (dep *appsv1.Deployment, err error) {
 	log.Printf("[INFO] Reading deployment %s", name)
+	dep = &appsv1.Deployment{}
 
-	// first try read against the v1 API
-	dep, err := conn.AppsV1().Deployments(namespace).Get(name, metav1.GetOptions{})
-	if err != nil {
-		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
-			// try v1beta1 API (Kubernetes versions < 1.9)
-			out, err2 := conn.ExtensionsV1beta1().Deployments(namespace).Get(name, metav1.GetOptions{})
-			if err2 != nil {
-				return nil, err2
-			}
-			// dep, _ = convertBetaV1ToAppsV1(out)
-			Convert(out, dep)
+	switch highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...) {
+	case appsV1:
+		dep, err = conn.AppsV1().Deployments(namespace).Get(name, metav1.GetOptions{})
+		return dep, err
+
+	case extensionsV1beta1:
+		out, err := conn.ExtensionsV1beta1().Deployments(namespace).Get(name, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
 		}
+		err = Convert(out, dep)
+
+	default:
+		return nil, deploymentNotSupportedError
 	}
-	err = nil
 
 	return dep, err
 }

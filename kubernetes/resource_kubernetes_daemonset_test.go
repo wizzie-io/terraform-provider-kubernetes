@@ -233,8 +233,7 @@ func testAccCheckKubernetesDaemonSetExists(n string, obj *appsv1.DaemonSet) reso
 		if err != nil {
 			return err
 		}
-
-		out, err := conn.AppsV1().DaemonSets(namespace).Get(name, meta_v1.GetOptions{})
+		out, err := readDaemonSet(conn, namespace, name)
 		if err != nil {
 			return err
 		}
