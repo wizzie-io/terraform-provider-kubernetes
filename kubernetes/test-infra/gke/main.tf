@@ -1,5 +1,5 @@
 provider "google" {
-  // Provider settings to be provided via ENV variables
+  // Provider settings to be provided via ENV variables or .tfvars file
   project = "${var.gcp_project}"
   region  = "${var.gcp_region}"
 }

@@ -11,16 +11,20 @@ import (
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
 	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/api/extensions/v1beta1"
+	appsv1beta1 "k8s.io/api/apps/v1beta1"
+	appsv1beta2 "k8s.io/api/apps/v1beta2"
+	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes"
+	kubernetes "k8s.io/client-go/kubernetes"
 )
 
 const deploymentsResourceGroupName = "deployments"
 
-var deploymentsAPIGroups = []APIGroup{appsV1, extensionsV1beta1}
+var deploymentsAPIGroups = []APIGroup{appsV1, appsV1beta2, appsV1beta1, extensionsV1beta1}
+
+//var deploymentsAPIGroups = []APIGroup{appsV1, extensionsV1beta1}
 var deploymentNotSupportedError = errors.New("could not find Kubernetes API group that supports Deployment resources")
 
 func resourceKubernetesDeployment() *schema.Resource {
@@ -205,24 +209,68 @@ func resourceKubernetesDeploymentCreate(d *schema.ResourceData, meta interface{}
 	outDeploymentV1 := &appsv1.Deployment{}
 
 	log.Printf("[INFO] Creating new deployment: %#v", deployment)
-	switch highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...) {
+	apiGroup, err := highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...)
+	if err != nil {
+		return err
+	}
+	switch apiGroup {
 	case appsV1:
+		// Push deployment to API, and capture resultant object
 		outDeploymentV1, err = conn.AppsV1().Deployments(metadata.Namespace).Create(&deployment)
 
-	case extensionsV1beta1:
-		// convert deployment to v1betav1
-		deploymentV1beta1 := &v1beta1.Deployment{}
-		Convert(&deployment, deploymentV1beta1)
-
-		// Push deployment to API, and capture resultant object
-		var outDeploymentV1beta1 *v1beta1.Deployment
-		outDeploymentV1beta1, err = conn.ExtensionsV1beta1().Deployments(metadata.Namespace).Create(deploymentV1beta1)
+	case appsV1beta2:
+		beta := &appsv1beta2.Deployment{}
+		err = Convert(&deployment, beta)
 		if err != nil {
 			break
 		}
 
-		// convert returned object to v1 API object
-		Convert(outDeploymentV1beta1, outDeploymentV1)
+		out, err2 := conn.AppsV1beta2().Deployments(metadata.Namespace).Create(beta)
+		if err2 != nil {
+			err = err2
+			break
+		}
+
+		err = Convert(out, outDeploymentV1)
+		if err != nil {
+			break
+		}
+
+	case appsV1beta1:
+		beta := &appsv1beta1.Deployment{}
+		err = Convert(&deployment, beta)
+		if err != nil {
+			break
+		}
+
+		var outDeploymentV1beta1 *appsv1beta1.Deployment
+		outDeploymentV1beta1, err = conn.AppsV1beta1().Deployments(metadata.Namespace).Create(beta)
+		if err != nil {
+			break
+		}
+
+		err = Convert(outDeploymentV1beta1, outDeploymentV1)
+		if err != nil {
+			break
+		}
+
+	case extensionsV1beta1:
+		beta := &extensionsv1beta1.Deployment{}
+		err = Convert(&deployment, beta)
+		if err != nil {
+			break
+		}
+
+		var outDeploymentV1beta1 *extensionsv1beta1.Deployment
+		outDeploymentV1beta1, err = conn.ExtensionsV1beta1().Deployments(metadata.Namespace).Create(beta)
+		if err != nil {
+			break
+		}
+
+		err = Convert(outDeploymentV1beta1, outDeploymentV1)
+		if err != nil {
+			break
+		}
 
 	default:
 		err = deploymentNotSupportedError
@@ -343,22 +391,50 @@ func resourceKubernetesPatchDeployment(d *schema.ResourceData, conn *kubernetes.
 	deployment = &appsv1.Deployment{}
 
 	namespace, name, err := idParts(d.Id())
-	switch highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...) {
+	apiGroup, err := highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...)
+	if err != nil {
+		return nil, err
+	}
+
+	switch apiGroup {
 	case appsV1:
 		deployment, err = conn.AppsV1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
 		if err != nil {
 			return
 		}
 
-	case extensionsV1beta1:
-		deploymentV1beta1 := &v1beta1.Deployment{}
-
-		deploymentV1beta1, err = conn.ExtensionsV1beta1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
+	case appsV1beta2:
+		beta, err := conn.AppsV1beta2().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
 		if err != nil {
-			return
+			return nil, err
 		}
 
-		Convert(deploymentV1beta1, deployment)
+		err = Convert(beta, deployment)
+		if err != nil {
+			return nil, err
+		}
+
+	case appsV1beta1:
+		beta, err := conn.AppsV1beta1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
+		if err != nil {
+			return nil, err
+		}
+
+		err = Convert(beta, deployment)
+		if err != nil {
+			return nil, err
+		}
+
+	case extensionsV1beta1:
+		beta, err := conn.ExtensionsV1beta1().Deployments(namespace).Patch(name, pkgApi.JSONPatchType, data)
+		if err != nil {
+			return nil, err
+		}
+
+		err = Convert(beta, deployment)
+		if err != nil {
+			return nil, err
+		}
 
 	default:
 		err = deploymentNotSupportedError
@@ -401,9 +477,21 @@ func resourceKubernetesDeploymentDelete(d *schema.ResourceData, meta interface{}
 	}
 
 	policy := metav1.DeletePropagationForeground
-	switch highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...) {
+	apiGroup, err := highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...)
+	if err != nil {
+		return err
+	}
+	switch apiGroup {
 	case appsV1:
 		err = conn.AppsV1().Deployments(namespace).Delete(name, &metav1.DeleteOptions{
+			PropagationPolicy: &policy,
+		})
+	case appsV1beta2:
+		err = conn.AppsV1beta2().Deployments(namespace).Delete(name, &metav1.DeleteOptions{
+			PropagationPolicy: &policy,
+		})
+	case appsV1beta1:
+		err = conn.AppsV1beta1().Deployments(namespace).Delete(name, &metav1.DeleteOptions{
 			PropagationPolicy: &policy,
 		})
 	case extensionsV1beta1:
@@ -428,7 +516,7 @@ func resourceKubernetesDeploymentExists(d *schema.ResourceData, meta interface{}
 
 	_, err = readDeployment(conn, namespace, name)
 	if err != nil {
-		if statusErr, ok := err.(*kerrors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
+		if statusErr, ok := err.(*kerrors.StatusError); ok && statusErr.ErrStatus.Code == 404 && statusErr.ErrStatus.Message != "the server could not find the requested resource" {
 			return false, nil
 		}
 		log.Printf("[DEBUG] Received error: %#v", err)
@@ -441,10 +529,30 @@ func readDeployment(conn *kubernetes.Clientset, namespace, name string) (dep *ap
 	log.Printf("[INFO] Reading deployment %s", name)
 	dep = &appsv1.Deployment{}
 
-	switch highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...) {
+	apiGroup, err := highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("[INFO] Reading deployment using %s API Group", apiGroup)
+
+	switch apiGroup {
 	case appsV1:
 		dep, err = conn.AppsV1().Deployments(namespace).Get(name, metav1.GetOptions{})
 		return dep, err
+
+	case appsV1beta2:
+		out, err := conn.AppsV1beta2().Deployments(namespace).Get(name, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+		err = Convert(out, dep)
+
+	case appsV1beta1:
+		out, err := conn.AppsV1beta1().Deployments(namespace).Get(name, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+		err = Convert(out, dep)
 
 	case extensionsV1beta1:
 		out, err := conn.ExtensionsV1beta1().Deployments(namespace).Get(name, metav1.GetOptions{})

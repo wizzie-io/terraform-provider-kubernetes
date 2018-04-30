@@ -37,21 +37,38 @@ func (g APIGroup) String() string {
 	}
 }
 
-func highestSupportedAPIGroup(rtype string, groups ...APIGroup) APIGroup {
-	for _, g := range groups {
-		if serverSupportsResourceAPIVersion(rtype, g.String()) {
-			return g
+func lowestSupportedAPIGroup(rtype string, groups ...APIGroup) (APIGroup, error) {
+	for i := len(groups) - 1; i > -1; i-- {
+		g := groups[i]
+		match, err := serverSupportsResourceAPIVersion(rtype, g.String())
+		if err != nil {
+			return none, err
+		} else if match {
+			return g, nil
 		}
 	}
-	return none
+	return none, nil
 }
 
-func serverSupportsResourceAPIVersion(rname string, groupVersion string) bool {
+func highestSupportedAPIGroup(rtype string, groups ...APIGroup) (APIGroup, error) {
+	for _, g := range groups {
+		match, err := serverSupportsResourceAPIVersion(rtype, g.String())
+		if err != nil {
+			return none, err
+		} else if match {
+			return g, nil
+		}
+	}
+	return none, nil
+}
+
+func serverSupportsResourceAPIVersion(rname string, groupVersion string) (bool, error) {
 	start := time.Now()
 	resList, err := providerInstance.discoClient.ServerResources()
+	//resList, err := providerInstance.conn.DiscoveryClient.ServerResources()
 	if err != nil {
 		log.Printf("[WARN] discovery client could not resource list: %v\n", err)
-		return false
+		return false, err
 	}
 	log.Printf("[DEBUG] retrieved resource list in %v\n", time.Now().Sub(start))
 
@@ -60,14 +77,14 @@ func serverSupportsResourceAPIVersion(rname string, groupVersion string) bool {
 			for _, v2 := range v.APIResources {
 				if v2.Name == rname {
 					log.Printf("[DEBUG] api group [%s] supports %s resource type\n", groupVersion, rname)
-					return true
+					return true, nil
 				}
 			}
 		}
 	}
 	log.Printf("[DEBUG] api group [%s] does not supports %s resource type on Kubernetes server\n", groupVersion, rname)
 
-	return false
+	return false, nil
 }
 
 // Convert between two types by converting to/from JSON. Intended to switch
@@ -89,8 +106,8 @@ func Convert(item, out interface{}) error {
 
 // ServerVersionPre1_9 reads the Kubernetes API verions and returns true if less
 // than v1.9
-func ServerVersionPre1_9(conn *kubernetes.Clientset) bool {
-	ver, _ := providerInstance.discoClient.ServerVersion()
+func (kp *KubernetesProvider) ServerVersionPre1_9(conn *kubernetes.Clientset) bool {
+	ver, _ := kp.discoClient.ServerVersion()
 	minor, _ := strconv.Atoi(string(ver.Minor[0]))
 	log.Printf("[INFO] Kubernetes Server version: %#v", ver)
 

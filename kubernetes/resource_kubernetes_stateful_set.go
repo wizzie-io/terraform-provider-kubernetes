@@ -178,7 +178,11 @@ func resourceKubernetesStatefulSetCreate(d *schema.ResourceData, meta interface{
 	outStatefulSetV1 := &v1.StatefulSet{}
 
 	log.Printf("[INFO] Creating new Stateful Set: %#v", statefulSetV1)
-	switch highestSupportedAPIGroup(statefulSetResourceGroupName, statefulSetAPIGroups...) {
+	apiGroup, err := highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
+	if err != nil {
+		return err
+	}
+	switch apiGroup {
 	case appsV1:
 		outStatefulSetV1, err = conn.AppsV1().StatefulSets(metadata.Namespace).Create(&statefulSetV1)
 
@@ -197,10 +201,7 @@ func resourceKubernetesStatefulSetCreate(d *schema.ResourceData, meta interface{
 	default:
 		err = statefulSetNotSupportedError
 	}
-	if ServerVersionPre1_9(conn) {
-		log.Println("[INFO] Detected pre 1.9 Kubernetes API, using apps/v1beta1 API for StatefulSet")
 
-	}
 	if err != nil {
 		return fmt.Errorf("Failed to create Stateful Set: %s", err)
 	}
@@ -328,7 +329,11 @@ func resourceKubernetesStatefulSetDelete(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	switch highestSupportedAPIGroup(statefulSetResourceGroupName, statefulSetAPIGroups...) {
+	apiGroup, err := highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
+	if err != nil {
+		return err
+	}
+	switch apiGroup {
 	case appsV1:
 		err = conn.AppsV1().StatefulSets(namespace).Delete(name, &metav1.DeleteOptions{})
 	case appsV1beta2:
@@ -372,7 +377,11 @@ func patchStatefulSet(d *schema.ResourceData, conn *kubernetes.Clientset, data [
 	ss = &v1.StatefulSet{}
 	namespace, name, err := idParts(d.Id())
 
-	switch highestSupportedAPIGroup(statefulSetResourceGroupName, statefulSetAPIGroups...) {
+	apiGroup, err := highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
+	if err != nil {
+		return nil, err
+	}
+	switch apiGroup {
 	case appsV1:
 		ss, err = conn.AppsV1().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
 		if err != nil {
@@ -410,7 +419,11 @@ func readStatefulSet(conn *kubernetes.Clientset, namespace, name string) (ss *v1
 	log.Printf("[INFO] Reading StatefulSet %s", name)
 	ss = &v1.StatefulSet{}
 
-	switch highestSupportedAPIGroup(statefulSetResourceGroupName, statefulSetAPIGroups...) {
+	apiGroup, err := highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
+	if err != nil {
+		return nil, err
+	}
+	switch apiGroup {
 	case appsV1:
 		ss, err = conn.AppsV1().StatefulSets(namespace).Get(name, metav1.GetOptions{})
 
