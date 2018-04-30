@@ -15,7 +15,6 @@ import (
 	"k8s.io/api/extensions/v1beta1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubernetes "k8s.io/client-go/kubernetes"
 )
 
 const daemonSetResourceGroupName = "daemonsets"
@@ -165,7 +164,8 @@ func buildDaemonSetObject(d *schema.ResourceData) (*v1.DaemonSet, error) {
 }
 
 func resourceKubernetesDaemonSetCreate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
+	conn := kp.conn
 
 	daemonset, err := buildDaemonSetObject(d)
 	if err != nil {
@@ -174,7 +174,7 @@ func resourceKubernetesDaemonSetCreate(d *schema.ResourceData, meta interface{})
 
 	out := &v1.DaemonSet{}
 	log.Printf("[INFO] Creating new daemonset: %#v", daemonset)
-	apiGroup, err := highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
+	apiGroup, err := kp.highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
 	if err != nil {
 		return err
 	}
@@ -209,10 +209,10 @@ func resourceKubernetesDaemonSetCreate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceKubernetesDaemonSetRead(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
 	namespace, name, err := idParts(d.Id())
 
-	daemonset, err := readDaemonSet(conn, namespace, name)
+	daemonset, err := readDaemonSet(kp, namespace, name)
 	if err != nil {
 		log.Printf("[DEBUG] Received error: %#v", err)
 		return err
@@ -243,11 +243,12 @@ func resourceKubernetesDaemonSetRead(d *schema.ResourceData, meta interface{}) e
 	return nil
 }
 
-func readDaemonSet(conn *kubernetes.Clientset, namespace, name string) (dset *v1.DaemonSet, err error) {
+func readDaemonSet(kp *kubernetesProvider, namespace, name string) (dset *v1.DaemonSet, err error) {
 	log.Printf("[INFO] Reading DaemonSet %s", name)
+	conn := kp.conn
 	dset = &v1.DaemonSet{}
 
-	apiGroup, err := highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
+	apiGroup, err := kp.highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +281,8 @@ func readDaemonSet(conn *kubernetes.Clientset, namespace, name string) (dset *v1
 }
 
 func resourceKubernetesDaemonSetUpdate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
+	conn := kp.conn
 	namespace, name, err := idParts(d.Id())
 
 	daemonset, err := buildDaemonSetObject(d)
@@ -290,7 +292,7 @@ func resourceKubernetesDaemonSetUpdate(d *schema.ResourceData, meta interface{})
 
 	log.Printf("[INFO] Updating daemonset: %q", name)
 	out := &v1.DaemonSet{}
-	apiGroup, err := highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
+	apiGroup, err := kp.highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
 	if err != nil {
 		return err
 	}
@@ -341,7 +343,7 @@ func resourceKubernetesDaemonSetUpdate(d *schema.ResourceData, meta interface{})
 	log.Printf("[INFO] Submitted updated daemonset: %#v", out)
 
 	err = resource.Retry(d.Timeout(schema.TimeoutUpdate),
-		waitForDaemonSetReplicasFunc(conn, namespace, name))
+		waitForDaemonSetReplicasFunc(kp, namespace, name))
 	if err != nil {
 		return err
 	}
@@ -350,7 +352,8 @@ func resourceKubernetesDaemonSetUpdate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceKubernetesDaemonSetDelete(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
+	conn := kp.conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -359,7 +362,7 @@ func resourceKubernetesDaemonSetDelete(d *schema.ResourceData, meta interface{})
 	log.Printf("[INFO] Deleting daemonset: %#v", name)
 
 	policy := metav1.DeletePropagationForeground
-	apiGroup, err := highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
+	apiGroup, err := kp.highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
 	if err != nil {
 		return err
 	}
@@ -381,11 +384,11 @@ func resourceKubernetesDaemonSetDelete(d *schema.ResourceData, meta interface{})
 }
 
 func resourceKubernetesDaemonSetExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
 	namespace, name, err := idParts(d.Id())
 	log.Printf("[INFO] Checking daemonset %s", name)
 
-	_, err = readDaemonSet(conn, namespace, name)
+	_, err = readDaemonSet(kp, namespace, name)
 	if err != nil {
 		if statusErr, ok := err.(*kerrors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
 			return false, nil
@@ -463,9 +466,9 @@ func migrateDaemonSetStateV0toV1(is *terraform.InstanceState) (*terraform.Instan
 	return is, nil
 }
 
-func waitForDaemonSetReplicasFunc(conn *kubernetes.Clientset, ns, name string) resource.RetryFunc {
+func waitForDaemonSetReplicasFunc(kp *kubernetesProvider, ns, name string) resource.RetryFunc {
 	return func() *resource.RetryError {
-		daemonSet, err := readDaemonSet(conn, ns, name)
+		daemonSet, err := readDaemonSet(kp, ns, name)
 		if err != nil {
 			return resource.NonRetryableError(err)
 		}

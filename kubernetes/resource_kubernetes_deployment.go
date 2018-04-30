@@ -17,7 +17,6 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
-	kubernetes "k8s.io/client-go/kubernetes"
 )
 
 const deploymentsResourceGroupName = "deployments"
@@ -190,7 +189,8 @@ func relocatedAttribute(name string) *schema.Schema {
 }
 
 func resourceKubernetesDeploymentCreate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
+	conn := meta.(*kubernetesProvider).conn
 
 	metadata := expandMetadata(d.Get("metadata").([]interface{}))
 	spec, err := expandDeploymentSpec(d.Get("spec").([]interface{}))
@@ -209,7 +209,7 @@ func resourceKubernetesDeploymentCreate(d *schema.ResourceData, meta interface{}
 	outDeploymentV1 := &appsv1.Deployment{}
 
 	log.Printf("[INFO] Creating new deployment: %#v", deployment)
-	apiGroup, err := highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...)
+	apiGroup, err := kp.highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...)
 	if err != nil {
 		return err
 	}
@@ -297,7 +297,7 @@ func resourceKubernetesDeploymentCreate(d *schema.ResourceData, meta interface{}
 	// 10 mins should be sufficient for scheduling ~10k replicas
 	err = resource.Retry(d.Timeout(schema.TimeoutCreate),
 		waitForDeploymentReplicasFunc(
-			conn,
+			kp,
 			outDeploymentV1.GetNamespace(),
 			outDeploymentV1.GetName(),
 		),
@@ -315,10 +315,10 @@ func resourceKubernetesDeploymentCreate(d *schema.ResourceData, meta interface{}
 }
 
 func resourceKubernetesDeploymentRead(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
 
 	namespace, name, err := idParts(d.Id())
-	deployment, err := readDeployment(conn, namespace, name)
+	deployment, err := readDeployment(kp, namespace, name)
 	if err != nil {
 		log.Printf("[DEBUG] Received error: %#v", err)
 		return err
@@ -349,7 +349,7 @@ func resourceKubernetesDeploymentRead(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceKubernetesDeploymentUpdate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
 	namespace, name, err := idParts(d.Id())
 
 	ops := patchMetadata("metadata.0.", "/metadata/", d)
@@ -371,7 +371,7 @@ func resourceKubernetesDeploymentUpdate(d *schema.ResourceData, meta interface{}
 	}
 	log.Printf("[INFO] Updating deployment %q: %v", name, string(data))
 
-	out, err := resourceKubernetesPatchDeployment(d, conn, data)
+	out, err := resourceKubernetesPatchDeployment(d, kp, data)
 	if err != nil {
 		return err
 	}
@@ -379,7 +379,7 @@ func resourceKubernetesDeploymentUpdate(d *schema.ResourceData, meta interface{}
 	log.Printf("[INFO] Submitted updated deployment: %#v", out)
 
 	err = resource.Retry(d.Timeout(schema.TimeoutUpdate),
-		waitForDeploymentReplicasFunc(conn, namespace, name))
+		waitForDeploymentReplicasFunc(kp, namespace, name))
 	if err != nil {
 		return err
 	}
@@ -387,11 +387,12 @@ func resourceKubernetesDeploymentUpdate(d *schema.ResourceData, meta interface{}
 	return resourceKubernetesDeploymentRead(d, meta)
 }
 
-func resourceKubernetesPatchDeployment(d *schema.ResourceData, conn *kubernetes.Clientset, data []byte) (deployment *appsv1.Deployment, err error) {
+func resourceKubernetesPatchDeployment(d *schema.ResourceData, kp *kubernetesProvider, data []byte) (deployment *appsv1.Deployment, err error) {
+	conn := kp.conn
 	deployment = &appsv1.Deployment{}
 
 	namespace, name, err := idParts(d.Id())
-	apiGroup, err := highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...)
+	apiGroup, err := kp.highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...)
 	if err != nil {
 		return nil, err
 	}
@@ -444,7 +445,8 @@ func resourceKubernetesPatchDeployment(d *schema.ResourceData, conn *kubernetes.
 }
 
 func resourceKubernetesDeploymentDelete(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
+	conn := kp.conn
 
 	namespace, name, err := idParts(d.Id())
 	log.Printf("[INFO] Deleting deployment: %#v", name)
@@ -459,7 +461,7 @@ func resourceKubernetesDeploymentDelete(d *schema.ResourceData, meta interface{}
 	if err != nil {
 		return err
 	}
-	_, err = resourceKubernetesPatchDeployment(d, conn, data)
+	_, err = resourceKubernetesPatchDeployment(d, kp, data)
 	if err != nil {
 		return err
 	}
@@ -467,7 +469,7 @@ func resourceKubernetesDeploymentDelete(d *schema.ResourceData, meta interface{}
 	// Wait until all replicas are gone
 	err = resource.Retry(d.Timeout(schema.TimeoutDelete),
 		waitForDeploymentReplicasFunc(
-			conn,
+			kp,
 			namespace,
 			name,
 		),
@@ -477,7 +479,7 @@ func resourceKubernetesDeploymentDelete(d *schema.ResourceData, meta interface{}
 	}
 
 	policy := metav1.DeletePropagationForeground
-	apiGroup, err := highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...)
+	apiGroup, err := kp.highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...)
 	if err != nil {
 		return err
 	}
@@ -509,12 +511,12 @@ func resourceKubernetesDeploymentDelete(d *schema.ResourceData, meta interface{}
 }
 
 func resourceKubernetesDeploymentExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
 
 	namespace, name, err := idParts(d.Id())
 	log.Printf("[INFO] Checking deployment %s", name)
 
-	_, err = readDeployment(conn, namespace, name)
+	_, err = readDeployment(kp, namespace, name)
 	if err != nil {
 		if statusErr, ok := err.(*kerrors.StatusError); ok && statusErr.ErrStatus.Code == 404 && statusErr.ErrStatus.Message != "the server could not find the requested resource" {
 			return false, nil
@@ -525,11 +527,13 @@ func resourceKubernetesDeploymentExists(d *schema.ResourceData, meta interface{}
 	return true, err
 }
 
-func readDeployment(conn *kubernetes.Clientset, namespace, name string) (dep *appsv1.Deployment, err error) {
+func readDeployment(kp *kubernetesProvider, namespace, name string) (dep *appsv1.Deployment, err error) {
+	conn := kp.conn
+
 	log.Printf("[INFO] Reading deployment %s", name)
 	dep = &appsv1.Deployment{}
 
-	apiGroup, err := highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...)
+	apiGroup, err := kp.highestSupportedAPIGroup(deploymentsResourceGroupName, deploymentsAPIGroups...)
 	if err != nil {
 		return nil, err
 	}
@@ -569,10 +573,10 @@ func readDeployment(conn *kubernetes.Clientset, namespace, name string) (dep *ap
 }
 
 // func waitForDeploymentReplicasFunc(conn *kubernetes.Clientset, ns, name string) resource.RetryFunc {
-func waitForDeploymentReplicasFunc(conn *kubernetes.Clientset, ns, name string) resource.RetryFunc {
+func waitForDeploymentReplicasFunc(kp *kubernetesProvider, ns, name string) resource.RetryFunc {
 	return func() *resource.RetryError {
 
-		deployment, err := readDeployment(conn, ns, name)
+		deployment, err := readDeployment(kp, ns, name)
 		if err != nil {
 			return resource.NonRetryableError(err)
 		}
@@ -615,7 +619,7 @@ func resourceKubernetesDeploymentStateUpgrader(
 }
 
 // This deployment resource originally had the podSpec directly below spec.template level
-// This migration moves the state to spec.template.spec match the Kubernetes documented structure
+// This migration moves the state to spec.template.spec to match the Kubernetes documented structure
 func migrateStateV0toV1(is *terraform.InstanceState) (*terraform.InstanceState, error) {
 	log.Printf("[DEBUG] Attributes before migration: %#v", is.Attributes)
 

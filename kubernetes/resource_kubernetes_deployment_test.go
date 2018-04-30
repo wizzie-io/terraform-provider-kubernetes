@@ -9,7 +9,6 @@ import (
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
 	appsv1 "k8s.io/api/apps/v1"
-	kubernetes "k8s.io/client-go/kubernetes"
 )
 
 func TestAccKubernetesDeployment_minimal(t *testing.T) {
@@ -243,7 +242,7 @@ func pause() resource.TestCheckFunc {
 }
 
 func testAccCheckKubernetesDeploymentDestroy(s *terraform.State) error {
-	conn := testAccProvider.Meta().(*kubernetes.Clientset)
+	conn := testAccProvider.Meta().(*kubernetesProvider)
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "kubernetes_deployment" {
@@ -273,7 +272,7 @@ func testAccCheckKubernetesDeploymentExists(n string, obj *appsv1.Deployment) re
 			return fmt.Errorf("Not found: %s", n)
 		}
 
-		conn := testAccProvider.Meta().(*kubernetes.Clientset)
+		conn := testAccProvider.Meta().(*kubernetesProvider)
 
 		namespace, name, err := idParts(rs.Primary.ID)
 		if err != nil {

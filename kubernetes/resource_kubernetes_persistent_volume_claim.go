@@ -11,7 +11,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
-	kubernetes "k8s.io/client-go/kubernetes"
 )
 
 func resourceKubernetesPersistentVolumeClaim() *schema.Resource {
@@ -37,7 +36,7 @@ func resourceKubernetesPersistentVolumeClaim() *schema.Resource {
 }
 
 func resourceKubernetesPersistentVolumeClaimCreate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	metadata := expandMetadata(d.Get("metadata").([]interface{}))
 	spec, err := expandPersistentVolumeClaimSpec(d.Get("spec").([]interface{}))
@@ -105,7 +104,7 @@ func resourceKubernetesPersistentVolumeClaimCreate(d *schema.ResourceData, meta 
 }
 
 func resourceKubernetesPersistentVolumeClaimRead(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -132,7 +131,7 @@ func resourceKubernetesPersistentVolumeClaimRead(d *schema.ResourceData, meta in
 }
 
 func resourceKubernetesPersistentVolumeClaimUpdate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -157,7 +156,7 @@ func resourceKubernetesPersistentVolumeClaimUpdate(d *schema.ResourceData, meta 
 }
 
 func resourceKubernetesPersistentVolumeClaimDelete(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -177,7 +176,7 @@ func resourceKubernetesPersistentVolumeClaimDelete(d *schema.ResourceData, meta 
 }
 
 func resourceKubernetesPersistentVolumeClaimExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {

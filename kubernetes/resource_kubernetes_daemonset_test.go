@@ -227,13 +227,13 @@ func testAccCheckKubernetesDaemonSetExists(n string, obj *appsv1.DaemonSet) reso
 			return fmt.Errorf("Not found: %s", n)
 		}
 
-		conn := testAccProvider.Meta().(*kubernetes.Clientset)
+		kp := testAccProvider.Meta().(*kubernetesProvider)
 
 		namespace, name, err := idParts(rs.Primary.ID)
 		if err != nil {
 			return err
 		}
-		out, err := readDaemonSet(conn, namespace, name)
+		out, err := readDaemonSet(kp, namespace, name)
 		if err != nil {
 			return err
 		}

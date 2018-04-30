@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"sync"
 
@@ -22,15 +23,13 @@ import (
 	khomedir "k8s.io/client-go/util/homedir"
 )
 
-type KubernetesProvider struct {
+type kubernetesProvider struct {
 	cfg               *restclient.Config
 	conn              *kubernetes.Clientset
 	discoveryCacheDir string
 	discoClient       *CachedDiscoveryClient
 	mu                sync.Mutex
 }
-
-var providerInstance *KubernetesProvider
 
 func Provider() terraform.ResourceProvider {
 	return &schema.Provider{
@@ -197,7 +196,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		return nil, fmt.Errorf("Failed to configure: %s", err)
 	}
 
-	providerInstance = &KubernetesProvider{
+	providerInstance := &kubernetesProvider{
 		conn: k,
 		cfg:  cfg,
 	}
@@ -207,10 +206,10 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		return nil, fmt.Errorf("Failed to configure discovery client: %s", err)
 	}
 
-	return k, err
+	return providerInstance, err
 }
 
-func (p *KubernetesProvider) prepareDiscoveryCacheClient(d *schema.ResourceData) error {
+func (p *kubernetesProvider) prepareDiscoveryCacheClient(d *schema.ResourceData) error {
 	// The more groups you have, the more discovery requests you need to make.
 	// given 25 groups (our groups + a few custom resources) with one-ish version each, discovery needs to make 50 requests
 	// double it just so we don't end up here again for a while.  This config is only used for discovery.
@@ -226,17 +225,17 @@ func (p *KubernetesProvider) prepareDiscoveryCacheClient(d *schema.ResourceData)
 
 		p.discoveryCacheDir = computeDiscoverCacheDir(filepath.Join(khomedir.HomeDir(), ".kube", "cache", "discovery"), p.cfg.Host)
 
-		//if p.discoveryCacheDir != "" {
-		//	wt := p.cfg.WrapTransport
-		//	p.cfg.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
-		//		if wt != nil {
-		//			rt = wt(rt)
-		//		}
-		//		return NewCacheRoundTripper(p.discoveryCacheDir, rt)
-		//	}
-		//} else {
-		//	return fmt.Errorf("could not determine discovery cache directory")
-		//}
+		if p.discoveryCacheDir != "" {
+			wt := p.cfg.WrapTransport
+			p.cfg.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
+				if wt != nil {
+					rt = wt(rt)
+				}
+				return NewCacheRoundTripper(p.discoveryCacheDir, rt)
+			}
+		} else {
+			return fmt.Errorf("could not determine discovery cache directory")
+		}
 
 		discoveryClient, err := discovery.NewDiscoveryClientForConfig(p.cfg)
 		if err != nil {

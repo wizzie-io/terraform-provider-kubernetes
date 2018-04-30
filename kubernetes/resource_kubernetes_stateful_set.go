@@ -14,7 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
-	kubernetes "k8s.io/client-go/kubernetes"
 )
 
 const statefulSetResourceGroupName = "statefulsets"
@@ -157,7 +156,8 @@ func resourceKubernetesStatefulSet() *schema.Resource {
 }
 
 func resourceKubernetesStatefulSetCreate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
+	conn := kp.conn
 
 	metadata := expandMetadata(d.Get("metadata").([]interface{}))
 	spec, err := expandStatefulSetSpec(d.Get("spec").([]interface{}))
@@ -178,7 +178,7 @@ func resourceKubernetesStatefulSetCreate(d *schema.ResourceData, meta interface{
 	outStatefulSetV1 := &v1.StatefulSet{}
 
 	log.Printf("[INFO] Creating new Stateful Set: %#v", statefulSetV1)
-	apiGroup, err := highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
+	apiGroup, err := kp.highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
 	if err != nil {
 		return err
 	}
@@ -212,7 +212,7 @@ func resourceKubernetesStatefulSetCreate(d *schema.ResourceData, meta interface{
 		d.Id(), *outStatefulSetV1.Spec.Replicas)
 	// 10 mins should be sufficient for scheduling ~10k replicas
 	err = resource.Retry(d.Timeout(schema.TimeoutCreate),
-		waitForStatefulSetReplicasFunc(conn, outStatefulSetV1.GetNamespace(), outStatefulSetV1.GetName()))
+		waitForStatefulSetReplicasFunc(kp, outStatefulSetV1.GetNamespace(), outStatefulSetV1.GetName()))
 	if err != nil {
 		return err
 	}
@@ -226,11 +226,11 @@ func resourceKubernetesStatefulSetCreate(d *schema.ResourceData, meta interface{
 }
 
 func resourceKubernetesStatefulSetRead(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
 	namespace, name, err := idParts(d.Id())
 
 	log.Printf("[INFO] Reading statefulSet %s", name)
-	statefulSet, err := readStatefulSet(conn, namespace, name)
+	statefulSet, err := readStatefulSet(kp, namespace, name)
 	if err != nil {
 		log.Printf("[DEBUG] Received error: %#v", err)
 		return err
@@ -261,7 +261,7 @@ func resourceKubernetesStatefulSetRead(d *schema.ResourceData, meta interface{})
 }
 
 func resourceKubernetesStatefulSetUpdate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
 
 	namespace, name, err := idParts(d.Id())
 
@@ -284,7 +284,7 @@ func resourceKubernetesStatefulSetUpdate(d *schema.ResourceData, meta interface{
 	}
 	log.Printf("[INFO] Updating statefulSet %q: %v", name, string(data))
 
-	out, err := patchStatefulSet(d, conn, data)
+	out, err := patchStatefulSet(d, kp, data)
 	if err != nil {
 		return fmt.Errorf("Failed to update statefulSet: %s", err)
 	}
@@ -292,7 +292,7 @@ func resourceKubernetesStatefulSetUpdate(d *schema.ResourceData, meta interface{
 	log.Printf("[INFO] Submitted updated statefulSet: %#v", out)
 
 	err = resource.Retry(d.Timeout(schema.TimeoutUpdate),
-		waitForStatefulSetReplicasFunc(conn, namespace, name))
+		waitForStatefulSetReplicasFunc(kp, namespace, name))
 	if err != nil {
 		return err
 	}
@@ -301,7 +301,8 @@ func resourceKubernetesStatefulSetUpdate(d *schema.ResourceData, meta interface{
 }
 
 func resourceKubernetesStatefulSetDelete(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
+	conn := kp.conn
 
 	namespace, name, err := idParts(d.Id())
 	log.Printf("[INFO] Deleting statefulSet: %#v", name)
@@ -317,19 +318,19 @@ func resourceKubernetesStatefulSetDelete(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	_, err = patchStatefulSet(d, conn, data)
+	_, err = patchStatefulSet(d, kp, data)
 	if err != nil {
 		return err
 	}
 
 	// Wait until all replicas are gone
 	err = resource.Retry(d.Timeout(schema.TimeoutDelete),
-		waitForStatefulSetReplicasFunc(conn, namespace, name))
+		waitForStatefulSetReplicasFunc(kp, namespace, name))
 	if err != nil {
 		return err
 	}
 
-	apiGroup, err := highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
+	apiGroup, err := kp.highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
 	if err != nil {
 		return err
 	}
@@ -355,7 +356,7 @@ func resourceKubernetesStatefulSetDelete(d *schema.ResourceData, meta interface{
 }
 
 func resourceKubernetesStatefulSetExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -363,7 +364,7 @@ func resourceKubernetesStatefulSetExists(d *schema.ResourceData, meta interface{
 	}
 
 	log.Printf("[INFO] Checking statefulSet %s", name)
-	_, err = readStatefulSet(conn, namespace, name)
+	_, err = readStatefulSet(kp, namespace, name)
 	if err != nil {
 		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
 			return false, nil
@@ -373,11 +374,12 @@ func resourceKubernetesStatefulSetExists(d *schema.ResourceData, meta interface{
 	return true, err
 }
 
-func patchStatefulSet(d *schema.ResourceData, conn *kubernetes.Clientset, data []byte) (ss *v1.StatefulSet, err error) {
+func patchStatefulSet(d *schema.ResourceData, kp *kubernetesProvider, data []byte) (ss *v1.StatefulSet, err error) {
+	conn := kp.conn
 	ss = &v1.StatefulSet{}
 	namespace, name, err := idParts(d.Id())
 
-	apiGroup, err := highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
+	apiGroup, err := kp.highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
 	if err != nil {
 		return nil, err
 	}
@@ -415,11 +417,12 @@ func patchStatefulSet(d *schema.ResourceData, conn *kubernetes.Clientset, data [
 	return
 }
 
-func readStatefulSet(conn *kubernetes.Clientset, namespace, name string) (ss *v1.StatefulSet, err error) {
+func readStatefulSet(kp *kubernetesProvider, namespace, name string) (ss *v1.StatefulSet, err error) {
 	log.Printf("[INFO] Reading StatefulSet %s", name)
+	conn := kp.conn
 	ss = &v1.StatefulSet{}
 
-	apiGroup, err := highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
+	apiGroup, err := kp.highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
 	if err != nil {
 		return nil, err
 	}
@@ -448,9 +451,9 @@ func readStatefulSet(conn *kubernetes.Clientset, namespace, name string) (ss *v1
 	return ss, err
 }
 
-func waitForStatefulSetReplicasFunc(conn *kubernetes.Clientset, ns, name string) resource.RetryFunc {
+func waitForStatefulSetReplicasFunc(kp *kubernetesProvider, ns, name string) resource.RetryFunc {
 	return func() *resource.RetryError {
-		statefulSet, err := readStatefulSet(conn, ns, name)
+		statefulSet, err := readStatefulSet(kp, ns, name)
 		if err != nil {
 			return resource.NonRetryableError(err)
 		}
