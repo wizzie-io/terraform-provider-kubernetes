@@ -17,41 +17,35 @@ limitations under the License.
 package v1beta1
 
 import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // GroupName is the group name for this API.
-const GroupName = "meta.k8s.io"
+const GroupName = "admission.k8s.io"
 
 // SchemeGroupVersion is group version used to register these objects
 var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1beta1"}
 
-// Kind takes an unqualified kind and returns a Group qualified GroupKind
-func Kind(kind string) schema.GroupKind {
-	return SchemeGroupVersion.WithKind(kind).GroupKind()
+// Resource takes an unqualified resource and returns a Group qualified GroupResource
+func Resource(resource string) schema.GroupResource {
+	return SchemeGroupVersion.WithResource(resource).GroupResource()
 }
 
-// scheme is the registry for the common types that adhere to the meta v1beta1 API spec.
-var scheme = runtime.NewScheme()
+var (
+	// TODO: move SchemeBuilder with zz_generated.deepcopy.go to k8s.io/api.
+	// localSchemeBuilder and AddToScheme will stay in k8s.io/kubernetes.
+	SchemeBuilder      = runtime.NewSchemeBuilder(addKnownTypes)
+	localSchemeBuilder = &SchemeBuilder
+	AddToScheme        = localSchemeBuilder.AddToScheme
+)
 
-// ParameterCodec knows about query parameters used with the meta v1beta1 API spec.
-var ParameterCodec = runtime.NewParameterCodec(scheme)
-
-func init() {
+// Adds the list of known types to the given scheme.
+func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
-		&Table{},
-		&TableOptions{},
-		&PartialObjectMetadata{},
-		&PartialObjectMetadataList{},
+		&AdmissionReview{},
 	)
-
-	if err := scheme.AddConversionFuncs(
-		Convert_Slice_string_To_v1beta1_IncludeObjectPolicy,
-	); err != nil {
-		panic(err)
-	}
-
-	// register manually. This usually goes through the SchemeBuilder, which we cannot use here.
-	//scheme.AddGeneratedDeepCopyFuncs(GetGeneratedDeepCopyFuncs()...)
+	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
+	return nil
 }
