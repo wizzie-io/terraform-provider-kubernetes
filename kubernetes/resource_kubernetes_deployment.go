@@ -23,7 +23,6 @@ const deploymentsResourceGroupName = "deployments"
 
 var deploymentsAPIGroups = []APIGroup{appsV1, appsV1beta2, appsV1beta1, extensionsV1beta1}
 
-//var deploymentsAPIGroups = []APIGroup{appsV1, extensionsV1beta1}
 var deploymentNotSupportedError = errors.New("could not find Kubernetes API group that supports Deployment resources")
 
 func resourceKubernetesDeployment() *schema.Resource {

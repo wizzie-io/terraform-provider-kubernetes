@@ -252,15 +252,17 @@ func (p *kubernetesProvider) prepareDiscoveryCacheClient(d *schema.ResourceData)
 		start := time.Now()
 		vInfo, err := p.discoClient.ServerVersion()
 		if err != nil {
-			return fmt.Errorf("could not retrieve Server Version")
-		}
-		log.Printf("[INFO] Kubernetes Server [%s] Version: %s\n", p.cfg.Host, vInfo.String())
+			log.Println("[WARN] could not retrieve Server Version")
+		} else {
+			log.Printf("[INFO] Kubernetes Server [%s] Version: %s\n", p.cfg.Host, vInfo.String())
 
-		_, err = p.discoClient.ServerResources()
-		if err != nil {
-			return fmt.Errorf("could not retrieve APIResourceList")
+			_, err = p.discoClient.ServerResources()
+			if err != nil {
+				log.Println("[WARN] could not retrieve APIResourceList")
+			} else {
+				log.Printf("[DEBUG] retrieved resource list in %v\n", time.Now().Sub(start))
+			}
 		}
-		log.Printf("[DEBUG] retrieved resource list in %v\n", time.Now().Sub(start))
 	}
 	return nil
 }
