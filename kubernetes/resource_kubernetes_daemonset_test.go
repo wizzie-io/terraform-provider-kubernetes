@@ -8,8 +8,6 @@ import (
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
 	appsv1 "k8s.io/api/apps/v1"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubernetes "k8s.io/client-go/kubernetes"
 )
 
 func TestAccKubernetesDaemonSet_minimal(t *testing.T) {
@@ -197,7 +195,7 @@ func TestAccKubernetesDaemonSet_noTopLevelLabels(t *testing.T) {
 }
 
 func testAccCheckKubernetesDaemonSetDestroy(s *terraform.State) error {
-	conn := testAccProvider.Meta().(*kubernetes.Clientset)
+	kp := testAccProvider.Meta().(*kubernetesProvider)
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "kubernetes_daemonset" {
@@ -209,7 +207,7 @@ func testAccCheckKubernetesDaemonSetDestroy(s *terraform.State) error {
 			return err
 		}
 
-		resp, err := conn.AppsV1().DaemonSets(namespace).Get(name, meta_v1.GetOptions{})
+		resp, err := readDaemonSet(kp, namespace, name)
 		if err == nil {
 			if resp.Name == rs.Primary.ID {
 				return fmt.Errorf("DaemonSet still exists: %s", rs.Primary.ID)

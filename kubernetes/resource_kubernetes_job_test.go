@@ -9,7 +9,6 @@ import (
 	"github.com/hashicorp/terraform/terraform"
 	api "k8s.io/api/batch/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubernetes "k8s.io/client-go/kubernetes"
 )
 
 func TestAccKubernetesJob_basic(t *testing.T) {
@@ -55,7 +54,7 @@ func TestAccKubernetesJob_basic(t *testing.T) {
 }
 
 func testAccCheckKubernetesJobDestroy(s *terraform.State) error {
-	conn := testAccProvider.Meta().(*kubernetes.Clientset)
+	conn := testAccProvider.Meta().(*kubernetesProvider).conn
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "kubernetes_job" {
@@ -85,7 +84,7 @@ func testAccCheckKubernetesJobExists(n string, obj *api.Job) resource.TestCheckF
 			return fmt.Errorf("Not found: %s", n)
 		}
 
-		conn := testAccProvider.Meta().(*kubernetes.Clientset)
+		conn := testAccProvider.Meta().(*kubernetesProvider).conn
 
 		namespace, name, err := idParts(rs.Primary.ID)
 		if err != nil {

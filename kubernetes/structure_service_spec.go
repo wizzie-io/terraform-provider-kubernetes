@@ -186,8 +186,8 @@ func patchServiceSpec(keyPrefix, pathPrefix string, d *schema.ResourceData, v *v
 		if err != nil {
 			return nil, err
 		}
-		v1_8_0, _ := gversion.NewVersion("1.8.0")
-		if k8sVersion.LessThan(v1_8_0) {
+		v1_7_0, _ := gversion.NewVersion("1.7.0")
+		if k8sVersion.LessThan(v1_7_0) {
 			// If we haven't done this the deprecated field would have priority
 			ops = append(ops, &ReplaceOperation{
 				Path:  pathPrefix + "deprecatedPublicIPs",

@@ -10,7 +10,6 @@ import (
 	"github.com/hashicorp/terraform/terraform"
 	api "k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubernetes "k8s.io/client-go/kubernetes"
 )
 
 func TestAccKubernetesServiceAccount_basic(t *testing.T) {
@@ -240,7 +239,7 @@ func matchObjectReferenceName(lor []api.ObjectReference, expected []*regexp.Rege
 }
 
 func testAccCheckKubernetesServiceAccountDestroy(s *terraform.State) error {
-	conn := testAccProvider.Meta().(*kubernetes.Clientset)
+	conn := testAccProvider.Meta().(*kubernetesProvider).conn
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "kubernetes_service_account" {
@@ -270,7 +269,7 @@ func testAccCheckKubernetesServiceAccountExists(n string, obj *api.ServiceAccoun
 			return fmt.Errorf("Not found: %s", n)
 		}
 
-		conn := testAccProvider.Meta().(*kubernetes.Clientset)
+		conn := testAccProvider.Meta().(*kubernetesProvider).conn
 
 		namespace, name, err := idParts(rs.Primary.ID)
 		if err != nil {

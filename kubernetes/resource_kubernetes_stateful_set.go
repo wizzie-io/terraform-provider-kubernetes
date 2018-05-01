@@ -178,7 +178,7 @@ func resourceKubernetesStatefulSetCreate(d *schema.ResourceData, meta interface{
 	outStatefulSetV1 := &v1.StatefulSet{}
 
 	log.Printf("[INFO] Creating new Stateful Set: %#v", statefulSetV1)
-	apiGroup, err := kp.highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
+	apiGroup, err := kp.highestSupportedAPIGroup(statefulSetResourceGroupName, statefulSetAPIGroups...)
 	if err != nil {
 		return err
 	}
@@ -330,7 +330,7 @@ func resourceKubernetesStatefulSetDelete(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	apiGroup, err := kp.highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
+	apiGroup, err := kp.highestSupportedAPIGroup(statefulSetResourceGroupName, statefulSetAPIGroups...)
 	if err != nil {
 		return err
 	}
@@ -379,7 +379,7 @@ func patchStatefulSet(d *schema.ResourceData, kp *kubernetesProvider, data []byt
 	ss = &v1.StatefulSet{}
 	namespace, name, err := idParts(d.Id())
 
-	apiGroup, err := kp.highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
+	apiGroup, err := kp.highestSupportedAPIGroup(statefulSetResourceGroupName, statefulSetAPIGroups...)
 	if err != nil {
 		return nil, err
 	}
@@ -422,7 +422,7 @@ func readStatefulSet(kp *kubernetesProvider, namespace, name string) (ss *v1.Sta
 	conn := kp.conn
 	ss = &v1.StatefulSet{}
 
-	apiGroup, err := kp.highestSupportedAPIGroup(daemonSetResourceGroupName, daemonSetAPIGroups...)
+	apiGroup, err := kp.highestSupportedAPIGroup(statefulSetResourceGroupName, statefulSetAPIGroups...)
 	if err != nil {
 		return nil, err
 	}

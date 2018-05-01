@@ -5,13 +5,11 @@ import (
 	"os"
 	"testing"
 
-	api "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubernetes "k8s.io/client-go/kubernetes"
-
 	"github.com/hashicorp/terraform/helper/acctest"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
+	api "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestAccKubernetesPod_basic(t *testing.T) {
@@ -468,7 +466,7 @@ func TestAccKubernetesPod_gke_with_nodeSelector(t *testing.T) {
 }
 
 func testAccCheckKubernetesPodDestroy(s *terraform.State) error {
-	conn := testAccProvider.Meta().(*kubernetes.Clientset)
+	conn := testAccProvider.Meta().(*kubernetesProvider).conn
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "kubernetes_pod" {
@@ -498,7 +496,7 @@ func testAccCheckKubernetesPodExists(n string, obj *api.Pod) resource.TestCheckF
 			return fmt.Errorf("Not found: %s", n)
 		}
 
-		conn := testAccProvider.Meta().(*kubernetes.Clientset)
+		conn := testAccProvider.Meta().(*kubernetesProvider).conn
 
 		namespace, name, err := idParts(rs.Primary.ID)
 		if err != nil {
