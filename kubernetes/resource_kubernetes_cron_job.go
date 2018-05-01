@@ -7,12 +7,18 @@ import (
 
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
+	"k8s.io/api/batch/v1beta1"
+	"k8s.io/api/batch/v2alpha1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
-	kubernetes "k8s.io/client-go/kubernetes"
-	batchv2 "k8s.io/client-go/pkg/apis/batch/v2alpha1"
 )
+
+const cronJobResourceGroupName = "cronjobs"
+
+var cronJobAPIGroups = []APIGroup{batchV1beta1, batchV2alpha1}
+
+var cronJobNotSupportedError = fmt.Errorf("could not find Kubernetes API group that supports CronJob resources")
 
 func resourceKubernetesCronJob() *schema.Resource {
 	return &schema.Resource{
@@ -40,7 +46,8 @@ func resourceKubernetesCronJob() *schema.Resource {
 }
 
 func resourceKubernetesCronJobCreate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
+	conn := kp.conn
 
 	metadata := expandMetadata(d.Get("metadata").([]interface{}))
 	spec, err := expandCronJobSpec(d.Get("spec").([]interface{}))
@@ -49,26 +56,46 @@ func resourceKubernetesCronJobCreate(d *schema.ResourceData, meta interface{}) e
 	}
 	spec.JobTemplate.ObjectMeta.Annotations = metadata.Annotations
 
-	job := batchv2.CronJob{
+	job := v1beta1.CronJob{
 		ObjectMeta: metadata,
 		Spec:       spec,
 	}
 
-	log.Printf("[INFO] Creating new cron job: %#v", job)
+	created := &v1beta1.CronJob{}
 
-	out, err := conn.BatchV2alpha1().CronJobs(metadata.Namespace).Create(&job)
+	log.Printf("[INFO] Creating new cron job: %#v", job)
+	apiGroup, err := kp.highestSupportedAPIGroup(cronJobResourceGroupName, cronJobAPIGroups...)
 	if err != nil {
 		return err
 	}
-	log.Printf("[INFO] Submitted new cron job: %#v", out)
+	switch apiGroup {
+	case batchV1beta1:
+		created, err = conn.BatchV1beta1().CronJobs(metadata.Namespace).Create(&job)
 
-	d.SetId(buildId(out.ObjectMeta))
+	case batchV2alpha1:
+		beta := &v2alpha1.CronJob{}
+		Convert(job, beta)
+		out, err2 := conn.BatchV2alpha1().CronJobs(metadata.Namespace).Create(beta)
+		if err2 != nil {
+			err = err2
+			break
+		}
+		Convert(out, created)
+
+	default:
+		err = cronJobNotSupportedError
+	}
+
+	log.Printf("[INFO] Submitted new cron job: %#v", created)
+
+	d.SetId(buildId(created.ObjectMeta))
 
 	return resourceKubernetesCronJobRead(d, meta)
 }
 
 func resourceKubernetesCronJobUpdate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
+	conn := kp.conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -92,7 +119,28 @@ func resourceKubernetesCronJobUpdate(d *schema.ResourceData, meta interface{}) e
 
 	log.Printf("[INFO] Updating cron job %s: %s", d.Id(), ops)
 
-	out, err := conn.BatchV2alpha1().CronJobs(namespace).Patch(name, pkgApi.JSONPatchType, data)
+	out := &v1beta1.CronJob{}
+	apiGroup, err := kp.highestSupportedAPIGroup(cronJobResourceGroupName, cronJobAPIGroups...)
+	if err != nil {
+		return err
+	}
+	switch apiGroup {
+	case batchV1beta1:
+		out, err = conn.BatchV1beta1().CronJobs(namespace).Patch(name, pkgApi.JSONPatchType, data)
+
+	case batchV2alpha1:
+		beta, err2 := conn.BatchV2alpha1().CronJobs(namespace).Patch(name, pkgApi.JSONPatchType, data)
+		if err2 != nil {
+			err = err2
+			break
+		}
+		Convert(beta, out)
+
+	default:
+		err = cronJobNotSupportedError
+	}
+
+	//out, err := conn.BatchV2alpha1().CronJobs(namespace).Patch(name, pkgApi.JSONPatchType, data)
 	if err != nil {
 		return err
 	}
@@ -103,7 +151,7 @@ func resourceKubernetesCronJobUpdate(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceKubernetesCronJobRead(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -111,7 +159,7 @@ func resourceKubernetesCronJobRead(d *schema.ResourceData, meta interface{}) err
 	}
 
 	log.Printf("[INFO] Reading cron job %s", name)
-	job, err := conn.BatchV2alpha1().CronJobs(namespace).Get(name, metav1.GetOptions{})
+	job, err := readCronJob(kp, namespace, name)
 	if err != nil {
 		log.Printf("[DEBUG] Received error: %#v", err)
 		return err
@@ -159,7 +207,8 @@ func resourceKubernetesCronJobRead(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceKubernetesCronJobDelete(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
+	conn := kp.conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -167,13 +216,26 @@ func resourceKubernetesCronJobDelete(d *schema.ResourceData, meta interface{}) e
 	}
 
 	log.Printf("[INFO] Deleting cron job: %#v", name)
-	err = conn.BatchV2alpha1().CronJobs(namespace).Delete(name, nil)
+	apiGroup, err := kp.highestSupportedAPIGroup(cronJobResourceGroupName, cronJobAPIGroups...)
+	if err != nil {
+		return err
+	}
+	switch apiGroup {
+	case batchV1beta1:
+		err = conn.BatchV1beta1().CronJobs(namespace).Delete(name, nil)
+
+	case batchV2alpha1:
+		err = conn.BatchV2alpha1().CronJobs(namespace).Delete(name, nil)
+
+	default:
+		err = cronJobNotSupportedError
+	}
 	if err != nil {
 		return err
 	}
 
 	err = resource.Retry(1*time.Minute, func() *resource.RetryError {
-		_, err := conn.BatchV2alpha1().CronJobs(namespace).Get(name, metav1.GetOptions{})
+		_, err := readCronJob(kp, namespace, name)
 		if err != nil {
 			if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
 				return nil
@@ -195,7 +257,7 @@ func resourceKubernetesCronJobDelete(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceKubernetesCronJobExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -203,7 +265,7 @@ func resourceKubernetesCronJobExists(d *schema.ResourceData, meta interface{}) (
 	}
 
 	log.Printf("[INFO] Checking cron job %s", name)
-	_, err = conn.BatchV2alpha1().CronJobs(namespace).Get(name, metav1.GetOptions{})
+	_, err = readCronJob(kp, namespace, name)
 	if err != nil {
 		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
 			return false, nil
@@ -211,4 +273,35 @@ func resourceKubernetesCronJobExists(d *schema.ResourceData, meta interface{}) (
 		log.Printf("[DEBUG] Received error: %#v", err)
 	}
 	return true, err
+}
+
+func readCronJob(kp *kubernetesProvider, namespace, name string) (cj *v1beta1.CronJob, err error) {
+	conn := kp.conn
+
+	log.Printf("[INFO] Reading CronJob %s", name)
+	cj = &v1beta1.CronJob{}
+
+	apiGroup, err := kp.highestSupportedAPIGroup(cronJobResourceGroupName, cronJobAPIGroups...)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("[INFO] Reading CronJob using %s API Group", apiGroup)
+
+	switch apiGroup {
+	case batchV1beta1:
+		cj, err = conn.BatchV1beta1().CronJobs(namespace).Get(name, metav1.GetOptions{})
+		return cj, err
+
+	case batchV2alpha1:
+		out, err := conn.BatchV2alpha1().CronJobs(namespace).Get(name, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+		err = Convert(out, cj)
+
+	default:
+		return nil, cronJobNotSupportedError
+	}
+
+	return cj, err
 }

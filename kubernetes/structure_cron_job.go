@@ -2,7 +2,7 @@ package kubernetes
 
 import (
 	"github.com/hashicorp/terraform/helper/schema"
-	batchv2 "k8s.io/client-go/pkg/apis/batch/v2alpha1"
+	batchv2 "k8s.io/api/batch/v1beta1"
 )
 
 func flattenCronJobSpec(in batchv2.CronJobSpec, d *schema.ResourceData) ([]interface{}, error) {

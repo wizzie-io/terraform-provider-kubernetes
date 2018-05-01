@@ -7,13 +7,11 @@ import (
 	"github.com/hashicorp/terraform/helper/acctest"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubernetes "k8s.io/client-go/kubernetes"
-	batchv2 "k8s.io/client-go/pkg/apis/batch/v2alpha1"
+	"k8s.io/api/batch/v1beta1"
 )
 
 func TestAccKubernetesCronJob_basic(t *testing.T) {
-	var conf batchv2.CronJob
+	var conf v1beta1.CronJob
 	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 
 	resource.Test(t, resource.TestCase{
@@ -58,7 +56,7 @@ func TestAccKubernetesCronJob_basic(t *testing.T) {
 }
 
 func testAccCheckKubernetesCronJobDestroy(s *terraform.State) error {
-	conn := testAccProvider.Meta().(*kubernetes.Clientset)
+	kp := testAccProvider.Meta().(*kubernetesProvider)
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "kubernetes_cron_job" {
@@ -70,7 +68,7 @@ func testAccCheckKubernetesCronJobDestroy(s *terraform.State) error {
 			return err
 		}
 
-		resp, err := conn.CronJobs(namespace).Get(name, meta_v1.GetOptions{})
+		resp, err := readCronJob(kp, namespace, name)
 		if err == nil {
 			if resp.Name == rs.Primary.ID {
 				return fmt.Errorf("CronJob still exists: %s", rs.Primary.ID)
@@ -81,21 +79,21 @@ func testAccCheckKubernetesCronJobDestroy(s *terraform.State) error {
 	return nil
 }
 
-func testAccCheckKubernetesCronJobExists(n string, obj *batchv2.CronJob) resource.TestCheckFunc {
+func testAccCheckKubernetesCronJobExists(n string, obj *v1beta1.CronJob) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
 		if !ok {
 			return fmt.Errorf("Not found: %s", n)
 		}
 
-		conn := testAccProvider.Meta().(*kubernetes.Clientset)
+		kp := testAccProvider.Meta().(*kubernetesProvider)
 
 		namespace, name, err := idParts(rs.Primary.ID)
 		if err != nil {
 			return err
 		}
 
-		out, err := conn.CronJobs(namespace).Get(name, meta_v1.GetOptions{})
+		out, err := readCronJob(kp, namespace, name)
 		if err != nil {
 			return err
 		}
