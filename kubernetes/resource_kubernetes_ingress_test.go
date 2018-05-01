@@ -7,9 +7,8 @@ import (
 	"github.com/hashicorp/terraform/helper/acctest"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
+	api "k8s.io/api/extensions/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubernetes "k8s.io/client-go/kubernetes"
-	api "k8s.io/client-go/pkg/apis/extensions/v1beta1"
 )
 
 func TestAccKubernetesIngress_basic(t *testing.T) {
@@ -143,7 +142,7 @@ func TestAccKubernetesIngress_InternalKey(t *testing.T) {
 }
 
 func testAccCheckKubernetesIngressDestroy(s *terraform.State) error {
-	conn := testAccProvider.Meta().(*kubernetes.Clientset)
+	conn := testAccProvider.Meta().(*kubernetesProvider).conn
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "kubernetes_ingress" {
@@ -173,7 +172,7 @@ func testAccCheckKubernetesIngressExists(n string, obj *api.Ingress) resource.Te
 			return fmt.Errorf("Not found: %s", n)
 		}
 
-		conn := testAccProvider.Meta().(*kubernetes.Clientset)
+		conn := testAccProvider.Meta().(*kubernetesProvider).conn
 
 		namespace, name, err := idParts(rs.Primary.ID)
 		if err != nil {

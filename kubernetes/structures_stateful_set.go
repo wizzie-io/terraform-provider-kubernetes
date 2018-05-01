@@ -4,12 +4,12 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform/helper/schema"
+	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/pkg/api/v1"
-	"k8s.io/client-go/pkg/apis/apps/v1beta1"
 )
 
-func flattenStatefulSetSpec(in v1beta1.StatefulSetSpec, d *schema.ResourceData) ([]interface{}, error) {
+func flattenStatefulSetSpec(in appsv1.StatefulSetSpec, d *schema.ResourceData) ([]interface{}, error) {
 	att := make(map[string]interface{})
 
 	if in.Replicas != nil {
@@ -45,7 +45,7 @@ func flattenStatefulSetSpec(in v1beta1.StatefulSetSpec, d *schema.ResourceData) 
 	return []interface{}{att}, nil
 }
 
-func flattenStatefulSetUpdateStrategy(in v1beta1.StatefulSetUpdateStrategy, d *schema.ResourceData) []interface{} {
+func flattenStatefulSetUpdateStrategy(in appsv1.StatefulSetUpdateStrategy, d *schema.ResourceData) []interface{} {
 	att := make(map[string]interface{})
 	if in.Type != "" {
 		att["type"] = in.Type
@@ -56,10 +56,10 @@ func flattenStatefulSetUpdateStrategy(in v1beta1.StatefulSetUpdateStrategy, d *s
 	return []interface{}{att}
 }
 
-func flattenStatefulSetStrategyRollingUpdate(in *v1beta1.RollingUpdateStatefulSetStrategy) []interface{} {
+func flattenStatefulSetStrategyRollingUpdate(in *appsv1.RollingUpdateStatefulSetStrategy) []interface{} {
 	att := make(map[string]interface{})
 	if in.Partition != nil {
-		att["partition"] = in.Partition
+		att["partition"] = int(*in.Partition)
 	}
 
 	return []interface{}{att}
@@ -69,8 +69,8 @@ func flattenStatefulSetStrategyRollingUpdate(in *v1beta1.RollingUpdateStatefulSe
 // EXPANDERS
 //
 
-func expandStatefulSetSpec(statefulSet []interface{}) (v1beta1.StatefulSetSpec, error) {
-	obj := v1beta1.StatefulSetSpec{}
+func expandStatefulSetSpec(statefulSet []interface{}) (appsv1.StatefulSetSpec, error) {
+	obj := appsv1.StatefulSetSpec{}
 	if len(statefulSet) == 0 || statefulSet[0] == nil {
 		return obj, nil
 	}
@@ -117,15 +117,15 @@ func expandStatefulSetSpec(statefulSet []interface{}) (v1beta1.StatefulSetSpec, 
 	return obj, nil
 }
 
-func expandStatefulSetUpdateStrategy(p []interface{}) v1beta1.StatefulSetUpdateStrategy {
-	obj := v1beta1.StatefulSetUpdateStrategy{}
+func expandStatefulSetUpdateStrategy(p []interface{}) appsv1.StatefulSetUpdateStrategy {
+	obj := appsv1.StatefulSetUpdateStrategy{}
 	if len(p) == 0 || p[0] == nil {
 		return obj
 	}
 	in := p[0].(map[string]interface{})
 
 	if v, ok := in["type"]; ok {
-		obj.Type = v1beta1.StatefulSetUpdateStrategyType(v.(string))
+		obj.Type = appsv1.StatefulSetUpdateStrategyType(v.(string))
 	}
 	if v, ok := in["rolling_update"]; ok {
 		obj.RollingUpdate = expandRollingUpdateStatefulSetStrategy(v.([]interface{}))
@@ -133,8 +133,8 @@ func expandStatefulSetUpdateStrategy(p []interface{}) v1beta1.StatefulSetUpdateS
 	return obj
 }
 
-func expandRollingUpdateStatefulSetStrategy(p []interface{}) *v1beta1.RollingUpdateStatefulSetStrategy {
-	obj := v1beta1.RollingUpdateStatefulSetStrategy{}
+func expandRollingUpdateStatefulSetStrategy(p []interface{}) *appsv1.RollingUpdateStatefulSetStrategy {
+	obj := appsv1.RollingUpdateStatefulSetStrategy{}
 	if len(p) == 0 || p[0] == nil {
 		return &obj
 	}

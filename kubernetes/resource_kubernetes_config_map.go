@@ -5,11 +5,10 @@ import (
 	"log"
 
 	"github.com/hashicorp/terraform/helper/schema"
+	api "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
-	kubernetes "k8s.io/client-go/kubernetes"
-	api "k8s.io/client-go/pkg/api/v1"
 )
 
 func resourceKubernetesConfigMap() *schema.Resource {
@@ -35,7 +34,7 @@ func resourceKubernetesConfigMap() *schema.Resource {
 }
 
 func resourceKubernetesConfigMapCreate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	metadata := expandMetadata(d.Get("metadata").([]interface{}))
 	cfgMap := api.ConfigMap{
@@ -54,7 +53,7 @@ func resourceKubernetesConfigMapCreate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceKubernetesConfigMapRead(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -77,7 +76,7 @@ func resourceKubernetesConfigMapRead(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceKubernetesConfigMapUpdate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -106,7 +105,7 @@ func resourceKubernetesConfigMapUpdate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceKubernetesConfigMapDelete(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -125,7 +124,7 @@ func resourceKubernetesConfigMapDelete(d *schema.ResourceData, meta interface{})
 }
 
 func resourceKubernetesConfigMapExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {

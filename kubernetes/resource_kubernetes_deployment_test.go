@@ -8,13 +8,13 @@ import (
 	"github.com/hashicorp/terraform/helper/acctest"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubernetes "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
+	appsv1 "k8s.io/api/apps/v1"
 )
 
 func TestAccKubernetesDeployment_minimal(t *testing.T) {
-	var conf v1beta1.Deployment
+	t.Parallel()
+
+	var conf appsv1.Deployment
 	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 
 	resource.Test(t, resource.TestCase{
@@ -37,7 +37,9 @@ func TestAccKubernetesDeployment_minimal(t *testing.T) {
 }
 
 func TestAccKubernetesDeployment_basic(t *testing.T) {
-	var conf v1beta1.Deployment
+	t.Parallel()
+
+	var conf appsv1.Deployment
 	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 
 	resource.Test(t, resource.TestCase{
@@ -47,7 +49,7 @@ func TestAccKubernetesDeployment_basic(t *testing.T) {
 		CheckDestroy:  testAccCheckKubernetesDeploymentDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccKubernetesDeploymentConfig_basic(name),
+				Config: testAccKubernetesDeploymentConfig_basic(name, 100),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					testAccCheckKubernetesDeploymentExists("kubernetes_deployment.test", &conf),
 					resource.TestCheckResourceAttr("kubernetes_deployment.test", "metadata.0.annotations.%", "2"),
@@ -93,7 +95,7 @@ func TestAccKubernetesDeployment_basic(t *testing.T) {
 				),
 			},
 			{
-				Config: testAccKubernetesDeploymentConfig_basic(name),
+				Config: testAccKubernetesDeploymentConfig_basic(name, 10),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					testAccCheckKubernetesDeploymentExists("kubernetes_deployment.test", &conf),
 					resource.TestCheckResourceAttr("kubernetes_deployment.test", "metadata.0.annotations.%", "2"),
@@ -121,6 +123,8 @@ func TestAccKubernetesDeployment_basic(t *testing.T) {
 }
 
 func TestAccKubernetesDeployment_importBasic(t *testing.T) {
+	t.Parallel()
+
 	resourceName := "kubernetes_deployment.test"
 	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 
@@ -130,19 +134,22 @@ func TestAccKubernetesDeployment_importBasic(t *testing.T) {
 		CheckDestroy: testAccCheckKubernetesDeploymentDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccKubernetesDeploymentConfig_basic(name),
+				Config: testAccKubernetesDeploymentConfig_basic(name, 2),
 			},
 			{
-				ResourceName:      resourceName,
-				ImportState:       true,
-				ImportStateVerify: true,
+				ResourceName:            resourceName,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"metadata.0.resource_version"},
 			},
 		},
 	})
 }
 
 func TestAccKubernetesDeployment_with_template_metadata(t *testing.T) {
-	var conf v1beta1.Deployment
+	t.Parallel()
+
+	var conf appsv1.Deployment
 
 	depName := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 	imageName := "nginx:1.7.9"
@@ -183,7 +190,9 @@ func TestAccKubernetesDeployment_with_template_metadata(t *testing.T) {
 }
 
 func TestAccKubernetesDeployment_initContainer(t *testing.T) {
-	var conf v1beta1.Deployment
+	t.Parallel()
+
+	var conf appsv1.Deployment
 	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 
 	resource.Test(t, resource.TestCase{
@@ -203,7 +212,9 @@ func TestAccKubernetesDeployment_initContainer(t *testing.T) {
 	})
 }
 func TestAccKubernetesDeployment_noTopLevelLabels(t *testing.T) {
-	var conf v1beta1.Deployment
+	t.Parallel()
+
+	var conf appsv1.Deployment
 	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 
 	resource.Test(t, resource.TestCase{
@@ -231,7 +242,7 @@ func pause() resource.TestCheckFunc {
 }
 
 func testAccCheckKubernetesDeploymentDestroy(s *terraform.State) error {
-	conn := testAccProvider.Meta().(*kubernetes.Clientset)
+	conn := testAccProvider.Meta().(*kubernetesProvider)
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "kubernetes_deployment" {
@@ -243,7 +254,7 @@ func testAccCheckKubernetesDeploymentDestroy(s *terraform.State) error {
 			return err
 		}
 
-		resp, err := conn.ExtensionsV1beta1().Deployments(namespace).Get(name, meta_v1.GetOptions{})
+		resp, err := readDeployment(conn, namespace, name)
 		if err == nil {
 			if resp.Name == rs.Primary.ID {
 				return fmt.Errorf("Deployment still exists: %s", rs.Primary.ID)
@@ -254,24 +265,21 @@ func testAccCheckKubernetesDeploymentDestroy(s *terraform.State) error {
 	return nil
 }
 
-func testAccCheckKubernetesDeploymentExists(n string, obj *v1beta1.Deployment) resource.TestCheckFunc {
+func testAccCheckKubernetesDeploymentExists(n string, obj *appsv1.Deployment) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
 		if !ok {
 			return fmt.Errorf("Not found: %s", n)
 		}
 
-		conn := testAccProvider.Meta().(*kubernetes.Clientset)
+		conn := testAccProvider.Meta().(*kubernetesProvider)
 
 		namespace, name, err := idParts(rs.Primary.ID)
 		if err != nil {
 			return err
 		}
 
-		out, err := conn.ExtensionsV1beta1().Deployments(namespace).Get(name, meta_v1.GetOptions{})
-		if err != nil {
-			return err
-		}
+		out, err := readDeployment(conn, namespace, name)
 
 		*obj = *out
 		return nil
@@ -285,7 +293,7 @@ resource "kubernetes_deployment" "test" {
     name = "%s"
   }
   spec {
-		replicas = 20
+		replicas = 3
     selector {
       foo = "bar"
     }
@@ -307,7 +315,7 @@ resource "kubernetes_deployment" "test" {
 `, name)
 }
 
-func testAccKubernetesDeploymentConfig_basic(name string) string {
+func testAccKubernetesDeploymentConfig_basic(name string, replicas int) string {
 	return fmt.Sprintf(`
 resource "kubernetes_deployment" "test" {
   metadata {
@@ -315,38 +323,44 @@ resource "kubernetes_deployment" "test" {
       TestAnnotationOne = "one"
       TestAnnotationTwo = "two"
     }
+
     labels {
-      TestLabelOne = "one"
-      TestLabelTwo = "two"
+      TestLabelOne   = "one"
+      TestLabelTwo   = "two"
       TestLabelThree = "three"
     }
+
     name = "%s"
   }
+
   spec {
-    replicas = 100 # This is intentionally high to exercise the waiter
+    replicas = %d
+
     selector {
-      TestLabelOne = "one"
-      TestLabelTwo = "two"
+      TestLabelOne   = "one"
+      TestLabelTwo   = "two"
       TestLabelThree = "three"
     }
+
     template {
-			metadata {
-				labels {
-					TestLabelOne = "one"
-					TestLabelTwo = "two"
-					TestLabelThree = "three"
-				}
-			}
-			spec {
-				container {
-					image = "nginx:1.7.8"
-					name  = "tf-acc-test"
-				}
-			}
+      metadata {
+        labels {
+          TestLabelOne   = "one"
+          TestLabelTwo   = "two"
+          TestLabelThree = "three"
+        }
+      }
+
+      spec {
+        container {
+          image = "nginx:1.7.8"
+          name  = "tf-acc-test"
+        }
+      }
     }
   }
 }
-`, name)
+`, name, replicas)
 }
 
 func testAccKubernetesDeploymentConfig_modified(name string) string {
@@ -355,37 +369,43 @@ resource "kubernetes_deployment" "test" {
   metadata {
     annotations {
       TestAnnotationOne = "one"
-      Different = "1234"
+      Different         = "1234"
     }
+
     labels {
-      TestLabelOne = "one"
+      TestLabelOne   = "one"
       TestLabelThree = "three"
     }
+
     name = "%s"
   }
+
   spec {
-		paused = true
-		progress_deadline_seconds = 30
-		revision_history_limit = 4
+    paused                    = true
+    progress_deadline_seconds = 30
+    revision_history_limit    = 4
+
     selector {
-      TestLabelOne = "one"
-      TestLabelTwo = "two"
+      TestLabelOne   = "one"
+      TestLabelTwo   = "two"
       TestLabelThree = "three"
     }
+
     template {
-			metadata {
-				labels {
-					TestLabelOne = "one"
-					TestLabelTwo = "two"
-					TestLabelThree = "three"
-				}
-			}
-			spec {
-				container {
-					image = "nginx:1.7.9"
-					name  = "tf-acc-test"
-				}
-			}
+      metadata {
+        labels {
+          TestLabelOne   = "one"
+          TestLabelTwo   = "two"
+          TestLabelThree = "three"
+        }
+      }
+
+      spec {
+        container {
+          image = "nginx:1.7.9"
+          name  = "tf-acc-test"
+        }
+      }
     }
   }
 }`, name)
@@ -403,26 +423,27 @@ resource "kubernetes_deployment" "test" {
 
   spec {
     selector {
+      foo = "bar"
       Test = "TfAcceptanceTest"
-		}
+    }
     template {
-			metadata {
-				labels {
-					foo = "bar"
-					Test = "TfAcceptanceTest"
-				}
-				annotations {
-					"prometheus.io/scrape" = "true"
-					"prometheus.io/scheme" = "https"
-					"prometheus.io/port"   = "4000"
-				}
+		metadata {
+			labels {
+				foo = "bar"
+				Test = "TfAcceptanceTest"
 			}
-			spec {
-				container {
-					image = "%s"
-					name  = "containername"
-				}
+			annotations {
+				"prometheus.io/scrape" = "true"
+				"prometheus.io/scheme" = "https"
+				"prometheus.io/port"   = "4000"
 			}
+		}
+		spec {
+			container {
+				image = "%s"
+				name  = "containername"
+			}
+		}
     }
   }
 }
@@ -441,6 +462,7 @@ resource "kubernetes_deployment" "test" {
 
   spec {
     selector {
+			foo = "bar"
       Test = "TfAcceptanceTest"
 		}
     template {

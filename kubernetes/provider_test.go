@@ -11,9 +11,8 @@ import (
 	"github.com/hashicorp/terraform/terraform"
 	"github.com/terraform-providers/terraform-provider-aws/aws"
 	"github.com/terraform-providers/terraform-provider-google/google"
+	api "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubernetes "k8s.io/client-go/kubernetes"
-	api "k8s.io/client-go/pkg/api/v1"
 )
 
 var testAccProviders map[string]terraform.ResourceProvider
@@ -42,8 +41,8 @@ func TestProvider_configure(t *testing.T) {
 	resetEnv := unsetEnv(t)
 	defer resetEnv()
 
-	os.Setenv("KUBECONFIG", "test-fixtures/kube-config.yaml")
-	os.Setenv("KUBE_CTX", "gcp")
+	//os.Setenv("KUBECONFIG", "test-fixtures/kube-config.yaml")
+	//os.Setenv("KUBE_CTX", "gcp")
 
 	c, err := config.NewRawConfig(map[string]interface{}{})
 	if err != nil {
@@ -247,7 +246,7 @@ func getFirstNode() (api.Node, error) {
 	if meta == nil {
 		return api.Node{}, errors.New("Provider not initialized, unable to get cluster node")
 	}
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 	resp, err := conn.CoreV1().Nodes().List(metav1.ListOptions{})
 	if err != nil {
 		return api.Node{}, err

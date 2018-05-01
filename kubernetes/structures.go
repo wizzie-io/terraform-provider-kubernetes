@@ -9,9 +9,9 @@ import (
 
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/mitchellh/copystructure"
+	api "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	api "k8s.io/client-go/pkg/api/v1"
 )
 
 func idParts(id string) (string, string, error) {
@@ -163,6 +163,8 @@ func isInternalKey(annotationKey string) bool {
 	u, err := url.Parse("//" + annotationKey)
 	if err == nil && strings.Contains(u.Hostname(), "kubernetes.io") {
 		log.Printf("[DEBUG] %s is internal key", annotationKey)
+		return true
+	} else if strings.Contains(annotationKey, "deprecated.daemonset.template.generation") {
 		return true
 	}
 

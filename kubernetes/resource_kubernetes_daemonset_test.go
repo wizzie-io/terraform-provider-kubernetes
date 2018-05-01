@@ -7,13 +7,11 @@ import (
 	"github.com/hashicorp/terraform/helper/acctest"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubernetes "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
+	appsv1 "k8s.io/api/apps/v1"
 )
 
 func TestAccKubernetesDaemonSet_minimal(t *testing.T) {
-	var conf v1beta1.DaemonSet
+	var conf appsv1.DaemonSet
 	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 
 	resource.Test(t, resource.TestCase{
@@ -36,7 +34,7 @@ func TestAccKubernetesDaemonSet_minimal(t *testing.T) {
 }
 
 func TestAccKubernetesDaemonSet_basic(t *testing.T) {
-	var conf v1beta1.DaemonSet
+	var conf appsv1.DaemonSet
 	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 
 	resource.Test(t, resource.TestCase{
@@ -115,7 +113,7 @@ func TestAccKubernetesDaemonSet_importBasic(t *testing.T) {
 }
 
 func TestAccKubernetesDaemonSet_with_template_metadata(t *testing.T) {
-	var conf v1beta1.DaemonSet
+	var conf appsv1.DaemonSet
 
 	depName := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 	imageName := "nginx:1.7.9"
@@ -156,7 +154,7 @@ func TestAccKubernetesDaemonSet_with_template_metadata(t *testing.T) {
 }
 
 func TestAccKubernetesDaemonSet_initContainer(t *testing.T) {
-	var conf v1beta1.DaemonSet
+	var conf appsv1.DaemonSet
 	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 
 	resource.Test(t, resource.TestCase{
@@ -176,7 +174,7 @@ func TestAccKubernetesDaemonSet_initContainer(t *testing.T) {
 	})
 }
 func TestAccKubernetesDaemonSet_noTopLevelLabels(t *testing.T) {
-	var conf v1beta1.DaemonSet
+	var conf appsv1.DaemonSet
 	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 
 	resource.Test(t, resource.TestCase{
@@ -197,7 +195,7 @@ func TestAccKubernetesDaemonSet_noTopLevelLabels(t *testing.T) {
 }
 
 func testAccCheckKubernetesDaemonSetDestroy(s *terraform.State) error {
-	conn := testAccProvider.Meta().(*kubernetes.Clientset)
+	kp := testAccProvider.Meta().(*kubernetesProvider)
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "kubernetes_daemonset" {
@@ -209,7 +207,7 @@ func testAccCheckKubernetesDaemonSetDestroy(s *terraform.State) error {
 			return err
 		}
 
-		resp, err := conn.ExtensionsV1beta1().DaemonSets(namespace).Get(name, meta_v1.GetOptions{})
+		resp, err := readDaemonSet(kp, namespace, name)
 		if err == nil {
 			if resp.Name == rs.Primary.ID {
 				return fmt.Errorf("DaemonSet still exists: %s", rs.Primary.ID)
@@ -220,21 +218,20 @@ func testAccCheckKubernetesDaemonSetDestroy(s *terraform.State) error {
 	return nil
 }
 
-func testAccCheckKubernetesDaemonSetExists(n string, obj *v1beta1.DaemonSet) resource.TestCheckFunc {
+func testAccCheckKubernetesDaemonSetExists(n string, obj *appsv1.DaemonSet) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
 		if !ok {
 			return fmt.Errorf("Not found: %s", n)
 		}
 
-		conn := testAccProvider.Meta().(*kubernetes.Clientset)
+		kp := testAccProvider.Meta().(*kubernetesProvider)
 
 		namespace, name, err := idParts(rs.Primary.ID)
 		if err != nil {
 			return err
 		}
-
-		out, err := conn.ExtensionsV1beta1().DaemonSets(namespace).Get(name, meta_v1.GetOptions{})
+		out, err := readDaemonSet(kp, namespace, name)
 		if err != nil {
 			return err
 		}

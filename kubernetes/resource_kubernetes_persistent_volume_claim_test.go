@@ -8,10 +8,9 @@ import (
 	"github.com/hashicorp/terraform/helper/acctest"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
+	api "k8s.io/api/core/v1"
+	storageapi "k8s.io/api/storage/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubernetes "k8s.io/client-go/kubernetes"
-	api "k8s.io/client-go/pkg/api/v1"
-	storageapi "k8s.io/client-go/pkg/apis/storage/v1"
 )
 
 func TestAccKubernetesPersistentVolumeClaim_basic(t *testing.T) {
@@ -446,7 +445,7 @@ func TestAccKubernetesPersistentVolumeClaim_googleCloud_storageClass(t *testing.
 }
 
 func testAccCheckKubernetesPersistentVolumeClaimDestroy(s *terraform.State) error {
-	conn := testAccProvider.Meta().(*kubernetes.Clientset)
+	conn := testAccProvider.Meta().(*kubernetesProvider).conn
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "kubernetes_persistent_volume_claim" {
@@ -476,7 +475,7 @@ func testAccCheckKubernetesPersistentVolumeClaimExists(n string, obj *api.Persis
 			return fmt.Errorf("Not found: %s", n)
 		}
 
-		conn := testAccProvider.Meta().(*kubernetes.Clientset)
+		conn := testAccProvider.Meta().(*kubernetesProvider).conn
 
 		namespace, name, err := idParts(rs.Primary.ID)
 		if err != nil {

@@ -7,13 +7,11 @@ import (
 	"github.com/hashicorp/terraform/helper/acctest"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubernetes "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/apis/apps/v1beta1"
+	"k8s.io/api/apps/v1"
 )
 
 func TestAccKubernetesStatefulSet_basic(t *testing.T) {
-	var sset v1beta1.StatefulSet
+	var sset v1.StatefulSet
 
 	statefulSetName := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 
@@ -52,7 +50,7 @@ func TestAccKubernetesStatefulSet_basic(t *testing.T) {
 }
 
 func TestAccKubernetesStatefulSet_pvcTemplate(t *testing.T) {
-	var sset v1beta1.StatefulSet
+	var sset v1.StatefulSet
 
 	statefulSetName := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 
@@ -83,17 +81,17 @@ func TestAccKubernetesStatefulSet_pvcTemplate(t *testing.T) {
 	})
 }
 
-func testAccCheckKubernetesStatefulSetExists(n string, obj *v1beta1.StatefulSet) resource.TestCheckFunc {
+func testAccCheckKubernetesStatefulSetExists(n string, obj *v1.StatefulSet) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
 		if !ok {
 			return fmt.Errorf("Not found: %s", n)
 		}
 
-		conn := testAccProvider.Meta().(*kubernetes.Clientset)
+		kp := testAccProvider.Meta().(*kubernetesProvider)
 
 		namespace, name, _ := idParts(rs.Primary.ID)
-		out, err := conn.AppsV1beta1().StatefulSets(namespace).Get(name, meta_v1.GetOptions{})
+		out, err := readStatefulSet(kp, namespace, name)
 		if err != nil {
 			return err
 		}
@@ -103,14 +101,14 @@ func testAccCheckKubernetesStatefulSetExists(n string, obj *v1beta1.StatefulSet)
 }
 
 func testAccCheckKubernetesStatefulSetDestroy(s *terraform.State) error {
-	conn := testAccProvider.Meta().(*kubernetes.Clientset)
+	kp := testAccProvider.Meta().(*kubernetesProvider)
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "kubernetes_stateful_set" {
 			continue
 		}
 		namespace, name, _ := idParts(rs.Primary.ID)
-		resp, err := conn.AppsV1beta1().StatefulSets(namespace).Get(name, meta_v1.GetOptions{})
+		resp, err := readStatefulSet(kp, namespace, name)
 		if err == nil {
 			if resp.Name == rs.Primary.ID {
 				return fmt.Errorf("Stateful Set still exists: %s", rs.Primary.ID)

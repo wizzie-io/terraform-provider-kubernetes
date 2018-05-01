@@ -7,11 +7,10 @@ import (
 
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
+	api "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
-	kubernetes "k8s.io/client-go/kubernetes"
-	api "k8s.io/client-go/pkg/api/v1"
 )
 
 func resourceKubernetesNamespace() *schema.Resource {
@@ -32,7 +31,7 @@ func resourceKubernetesNamespace() *schema.Resource {
 }
 
 func resourceKubernetesNamespaceCreate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	metadata := expandMetadata(d.Get("metadata").([]interface{}))
 	namespace := api.Namespace{
@@ -50,7 +49,7 @@ func resourceKubernetesNamespaceCreate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceKubernetesNamespaceRead(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	name := d.Id()
 	log.Printf("[INFO] Reading namespace %s", name)
@@ -69,7 +68,7 @@ func resourceKubernetesNamespaceRead(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceKubernetesNamespaceUpdate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	ops := patchMetadata("metadata.0.", "/metadata/", d)
 	data, err := ops.MarshalJSON()
@@ -89,7 +88,7 @@ func resourceKubernetesNamespaceUpdate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceKubernetesNamespaceDelete(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	name := d.Id()
 	log.Printf("[INFO] Deleting namespace: %#v", name)
@@ -128,7 +127,7 @@ func resourceKubernetesNamespaceDelete(d *schema.ResourceData, meta interface{})
 }
 
 func resourceKubernetesNamespaceExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	name := d.Id()
 	log.Printf("[INFO] Checking namespace %s", name)

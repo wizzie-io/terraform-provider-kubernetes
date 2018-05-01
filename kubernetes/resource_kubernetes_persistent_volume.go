@@ -5,13 +5,13 @@ import (
 	"log"
 	"time"
 
+	gversion "github.com/hashicorp/go-version"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
+	api "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
-	kubernetes "k8s.io/client-go/kubernetes"
-	api "k8s.io/client-go/pkg/api/v1"
 )
 
 func resourceKubernetesPersistentVolume() *schema.Resource {
@@ -23,6 +23,44 @@ func resourceKubernetesPersistentVolume() *schema.Resource {
 		Delete: resourceKubernetesPersistentVolumeDelete,
 		Importer: &schema.ResourceImporter{
 			State: schema.ImportStatePassthrough,
+		},
+
+		CustomizeDiff: func(diff *schema.ResourceDiff, meta interface{}) error {
+			if diff.Id() == "" {
+				// We only care about updates, not creation
+				return nil
+			}
+
+			// Mutation of PersistentVolumeSource after creation is no longer allowed in 1.9+
+			// See https://github.com/kubernetes/kubernetes/blob/v1.9.3/CHANGELOG-1.9.md#storage-3
+			conn := meta.(*kubernetesProvider).conn
+			serverVersion, err := conn.ServerVersion()
+			if err != nil {
+				return err
+			}
+
+			k8sVersion, err := gversion.NewVersion(serverVersion.String())
+			if err != nil {
+				return err
+			}
+
+			v1_9_0, _ := gversion.NewVersion("1.9.0")
+			if k8sVersion.Equal(v1_9_0) || k8sVersion.GreaterThan(v1_9_0) {
+				if diff.HasChange("spec.0.persistent_volume_source") {
+					keys := diff.GetChangedKeysPrefix("spec.0.persistent_volume_source")
+					for _, key := range keys {
+						if diff.HasChange(key) {
+							err := diff.ForceNew(key)
+							if err != nil {
+								return err
+							}
+						}
+					}
+					return nil
+				}
+			}
+
+			return nil
 		},
 
 		Schema: map[string]*schema.Schema{
@@ -73,7 +111,7 @@ func resourceKubernetesPersistentVolume() *schema.Resource {
 }
 
 func resourceKubernetesPersistentVolumeCreate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	metadata := expandMetadata(d.Get("metadata").([]interface{}))
 	spec, err := expandPersistentVolumeSpec(d.Get("spec").([]interface{}))
@@ -120,7 +158,7 @@ func resourceKubernetesPersistentVolumeCreate(d *schema.ResourceData, meta inter
 }
 
 func resourceKubernetesPersistentVolumeRead(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	name := d.Id()
 	log.Printf("[INFO] Reading persistent volume %s", name)
@@ -143,7 +181,7 @@ func resourceKubernetesPersistentVolumeRead(d *schema.ResourceData, meta interfa
 }
 
 func resourceKubernetesPersistentVolumeUpdate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	ops := patchMetadata("metadata.0.", "/metadata/", d)
 	if d.HasChange("spec") {
@@ -170,7 +208,7 @@ func resourceKubernetesPersistentVolumeUpdate(d *schema.ResourceData, meta inter
 }
 
 func resourceKubernetesPersistentVolumeDelete(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	name := d.Id()
 	log.Printf("[INFO] Deleting persistent volume: %#v", name)
@@ -186,7 +224,7 @@ func resourceKubernetesPersistentVolumeDelete(d *schema.ResourceData, meta inter
 }
 
 func resourceKubernetesPersistentVolumeExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	name := d.Id()
 	log.Printf("[INFO] Checking persistent volume %s", name)

@@ -7,11 +7,10 @@ import (
 
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
+	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
-	kubernetes "k8s.io/client-go/kubernetes"
-	batchv1 "k8s.io/client-go/pkg/apis/batch/v1"
 )
 
 func resourceKubernetesJob() *schema.Resource {
@@ -46,14 +45,13 @@ func resourceKubernetesJob() *schema.Resource {
 }
 
 func resourceKubernetesJobCreate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	metadata := expandMetadata(d.Get("metadata").([]interface{}))
 	spec, err := expandJobSpec(d.Get("spec").([]interface{}))
 	if err != nil {
 		return err
 	}
-	spec.Template.ObjectMeta.Annotations = metadata.Annotations
 
 	job := batchv1.Job{
 		ObjectMeta: metadata,
@@ -74,7 +72,7 @@ func resourceKubernetesJobCreate(d *schema.ResourceData, meta interface{}) error
 }
 
 func resourceKubernetesJobUpdate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -131,7 +129,7 @@ func resourceKubernetesJobUpdate(d *schema.ResourceData, meta interface{}) error
 }
 
 func resourceKubernetesJobRead(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -184,7 +182,7 @@ func resourceKubernetesJobRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceKubernetesJobDelete(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -220,7 +218,7 @@ func resourceKubernetesJobDelete(d *schema.ResourceData, meta interface{}) error
 }
 
 func resourceKubernetesJobExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {

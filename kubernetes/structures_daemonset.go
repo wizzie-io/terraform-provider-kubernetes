@@ -4,13 +4,13 @@ import (
 	"strconv"
 
 	"github.com/hashicorp/terraform/helper/schema"
+	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/pkg/api/v1"
-	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
 )
 
-func flattenDaemonSetSpec(in v1beta1.DaemonSetSpec, d *schema.ResourceData) ([]interface{}, error) {
+func flattenDaemonSetSpec(in appsv1.DaemonSetSpec, d *schema.ResourceData) ([]interface{}, error) {
 	att := make(map[string]interface{})
 	att["min_ready_seconds"] = in.MinReadySeconds
 
@@ -35,7 +35,7 @@ func flattenDaemonSetSpec(in v1beta1.DaemonSetSpec, d *schema.ResourceData) ([]i
 	return []interface{}{att}, nil
 }
 
-func flattenDaemonSetStrategy(in v1beta1.DaemonSetUpdateStrategy) []interface{} {
+func flattenDaemonSetStrategy(in appsv1.DaemonSetUpdateStrategy) []interface{} {
 	att := make(map[string]interface{})
 	if in.Type != "" {
 		att["type"] = in.Type
@@ -46,7 +46,7 @@ func flattenDaemonSetStrategy(in v1beta1.DaemonSetUpdateStrategy) []interface{} 
 	return []interface{}{att}
 }
 
-func flattenDaemonSetStrategyRollingUpdate(in *v1beta1.RollingUpdateDaemonSet) []interface{} {
+func flattenDaemonSetStrategyRollingUpdate(in *appsv1.RollingUpdateDaemonSet) []interface{} {
 	att := make(map[string]interface{})
 	if in.MaxUnavailable != nil {
 		att["max_unavailable"] = in.MaxUnavailable.String()
@@ -54,8 +54,8 @@ func flattenDaemonSetStrategyRollingUpdate(in *v1beta1.RollingUpdateDaemonSet) [
 	return []interface{}{att}
 }
 
-func expandDaemonSetSpec(deployment []interface{}) (v1beta1.DaemonSetSpec, error) {
-	obj := v1beta1.DaemonSetSpec{}
+func expandDaemonSetSpec(deployment []interface{}) (appsv1.DaemonSetSpec, error) {
+	obj := appsv1.DaemonSetSpec{}
 	if len(deployment) == 0 || deployment[0] == nil {
 		return obj, nil
 	}
@@ -67,17 +67,6 @@ func expandDaemonSetSpec(deployment []interface{}) (v1beta1.DaemonSetSpec, error
 		}
 	}
 	obj.UpdateStrategy = expandDaemonSetStrategy(in["strategy"].([]interface{}))
-
-	// podSpec, err := expandPodSpec(in["template"].([]interface{}))
-	// if err != nil {
-	// 	return obj, err
-	// }
-	// obj.Template = v1.PodTemplateSpec{
-	// 	ObjectMeta: metav1.ObjectMeta{
-	// 		Labels: obj.Selector.MatchLabels,
-	// 	},
-	// 	Spec: podSpec,
-	// }
 
 	for _, v := range in["template"].([]interface{}) {
 		template := v.(map[string]interface{})
@@ -98,16 +87,17 @@ func expandDaemonSetSpec(deployment []interface{}) (v1beta1.DaemonSetSpec, error
 	return obj, nil
 }
 
-func expandDaemonSetStrategy(p []interface{}) v1beta1.DaemonSetUpdateStrategy {
-	obj := v1beta1.DaemonSetUpdateStrategy{}
+func expandDaemonSetStrategy(p []interface{}) appsv1.DaemonSetUpdateStrategy {
+	obj := appsv1.DaemonSetUpdateStrategy{}
 
 	if len(p) == 0 || p[0] == nil {
+		obj.Type = appsv1.RollingUpdateDaemonSetStrategyType
 		return obj
 	}
 	in := p[0].(map[string]interface{})
 
 	if v, ok := in["type"]; ok {
-		obj.Type = v1beta1.DaemonSetUpdateStrategyType(v.(string))
+		obj.Type = appsv1.DaemonSetUpdateStrategyType(v.(string))
 	}
 	if v, ok := in["rolling_update"]; ok {
 		obj.RollingUpdate = expandRollingUpdateDaemonSet(v.([]interface{}))
@@ -115,8 +105,8 @@ func expandDaemonSetStrategy(p []interface{}) v1beta1.DaemonSetUpdateStrategy {
 	return obj
 }
 
-func expandRollingUpdateDaemonSet(p []interface{}) *v1beta1.RollingUpdateDaemonSet {
-	obj := v1beta1.RollingUpdateDaemonSet{}
+func expandRollingUpdateDaemonSet(p []interface{}) *appsv1.RollingUpdateDaemonSet {
+	obj := appsv1.RollingUpdateDaemonSet{}
 	if len(p) == 0 || p[0] == nil {
 		return &obj
 	}

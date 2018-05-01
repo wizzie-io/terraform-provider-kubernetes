@@ -35,3 +35,4 @@ scripts/runtests*.sh
 
 dist/*
 build/*
+terraform-provider-kubernetes

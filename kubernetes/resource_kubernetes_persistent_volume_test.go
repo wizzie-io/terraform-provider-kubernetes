@@ -8,9 +8,8 @@ import (
 	"github.com/hashicorp/terraform/helper/acctest"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
+	api "k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubernetes "k8s.io/client-go/kubernetes"
-	api "k8s.io/client-go/pkg/api/v1"
 )
 
 func TestAccKubernetesPersistentVolume_googleCloud_basic(t *testing.T) {
@@ -216,7 +215,6 @@ func TestAccKubernetesPersistentVolume_googleCloud_volumeSource(t *testing.T) {
 	name := fmt.Sprintf("tf-acc-test-%s", randString)
 	diskName := fmt.Sprintf("tf-acc-test-disk-%s", randString)
 
-	region := os.Getenv("GOOGLE_REGION")
 	zone := os.Getenv("GOOGLE_ZONE")
 
 	resource.Test(t, resource.TestCase{
@@ -232,10 +230,7 @@ func TestAccKubernetesPersistentVolume_googleCloud_volumeSource(t *testing.T) {
 					resource.TestCheckResourceAttr("kubernetes_persistent_volume.test", "metadata.0.annotations.%", "0"),
 					testAccCheckMetaAnnotations(&conf.ObjectMeta, map[string]string{}),
 					resource.TestCheckResourceAttr("kubernetes_persistent_volume.test", "metadata.0.labels.%", "0"),
-					testAccCheckMetaLabels(&conf.ObjectMeta, map[string]string{
-						"failure-domain.beta.kubernetes.io/region": region,
-						"failure-domain.beta.kubernetes.io/zone":   zone,
-					}),
+					testAccCheckMetaLabels(&conf.ObjectMeta, map[string]string{}),
 					resource.TestCheckResourceAttr("kubernetes_persistent_volume.test", "metadata.0.name", name),
 					resource.TestCheckResourceAttrSet("kubernetes_persistent_volume.test", "metadata.0.generation"),
 					resource.TestCheckResourceAttrSet("kubernetes_persistent_volume.test", "metadata.0.resource_version"),
@@ -256,10 +251,7 @@ func TestAccKubernetesPersistentVolume_googleCloud_volumeSource(t *testing.T) {
 					resource.TestCheckResourceAttr("kubernetes_persistent_volume.test", "metadata.0.annotations.%", "0"),
 					testAccCheckMetaAnnotations(&conf.ObjectMeta, map[string]string{}),
 					resource.TestCheckResourceAttr("kubernetes_persistent_volume.test", "metadata.0.labels.%", "0"),
-					testAccCheckMetaLabels(&conf.ObjectMeta, map[string]string{
-						"failure-domain.beta.kubernetes.io/region": region,
-						"failure-domain.beta.kubernetes.io/zone":   zone,
-					}),
+					testAccCheckMetaLabels(&conf.ObjectMeta, map[string]string{}),
 					resource.TestCheckResourceAttr("kubernetes_persistent_volume.test", "metadata.0.name", name),
 					resource.TestCheckResourceAttrSet("kubernetes_persistent_volume.test", "metadata.0.generation"),
 					resource.TestCheckResourceAttrSet("kubernetes_persistent_volume.test", "metadata.0.resource_version"),
@@ -435,7 +427,7 @@ func TestAccKubernetesPersistentVolume_storageClass(t *testing.T) {
 }
 
 func testAccCheckKubernetesPersistentVolumeDestroy(s *terraform.State) error {
-	conn := testAccProvider.Meta().(*kubernetes.Clientset)
+	conn := testAccProvider.Meta().(*kubernetesProvider).conn
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "kubernetes_persistent_volume" {
@@ -460,7 +452,7 @@ func testAccCheckKubernetesPersistentVolumeExists(n string, obj *api.PersistentV
 			return fmt.Errorf("Not found: %s", n)
 		}
 
-		conn := testAccProvider.Meta().(*kubernetes.Clientset)
+		conn := testAccProvider.Meta().(*kubernetesProvider).conn
 		name := rs.Primary.ID
 		out, err := conn.CoreV1().PersistentVolumes().Get(name, meta_v1.GetOptions{})
 		if err != nil {

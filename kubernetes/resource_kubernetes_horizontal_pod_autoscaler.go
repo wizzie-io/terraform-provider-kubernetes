@@ -5,11 +5,10 @@ import (
 	"log"
 
 	"github.com/hashicorp/terraform/helper/schema"
+	api "k8s.io/api/autoscaling/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
-	kubernetes "k8s.io/client-go/kubernetes"
-	api "k8s.io/client-go/pkg/apis/autoscaling/v1"
 )
 
 func resourceKubernetesHorizontalPodAutoscaler() *schema.Resource {
@@ -82,7 +81,7 @@ func resourceKubernetesHorizontalPodAutoscaler() *schema.Resource {
 }
 
 func resourceKubernetesHorizontalPodAutoscalerCreate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	metadata := expandMetadata(d.Get("metadata").([]interface{}))
 	svc := api.HorizontalPodAutoscaler{
@@ -102,7 +101,7 @@ func resourceKubernetesHorizontalPodAutoscalerCreate(d *schema.ResourceData, met
 }
 
 func resourceKubernetesHorizontalPodAutoscalerRead(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -131,7 +130,7 @@ func resourceKubernetesHorizontalPodAutoscalerRead(d *schema.ResourceData, meta 
 }
 
 func resourceKubernetesHorizontalPodAutoscalerUpdate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -159,7 +158,7 @@ func resourceKubernetesHorizontalPodAutoscalerUpdate(d *schema.ResourceData, met
 }
 
 func resourceKubernetesHorizontalPodAutoscalerDelete(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -178,7 +177,7 @@ func resourceKubernetesHorizontalPodAutoscalerDelete(d *schema.ResourceData, met
 }
 
 func resourceKubernetesHorizontalPodAutoscalerExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	conn := meta.(*kubernetes.Clientset)
+	conn := meta.(*kubernetesProvider).conn
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {

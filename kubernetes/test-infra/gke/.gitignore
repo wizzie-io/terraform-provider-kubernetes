@@ -1,0 +1,6 @@
+terraform.tfvars
+terraform.tfstate*
+.kube_config
+client.cert
+client.key
+kube.ca

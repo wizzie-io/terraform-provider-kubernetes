@@ -3,9 +3,9 @@ package kubernetes
 import (
 	gversion "github.com/hashicorp/go-version"
 	"github.com/hashicorp/terraform/helper/schema"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/version"
-	"k8s.io/client-go/pkg/api/v1"
 )
 
 // Flatteners
@@ -186,8 +186,8 @@ func patchServiceSpec(keyPrefix, pathPrefix string, d *schema.ResourceData, v *v
 		if err != nil {
 			return nil, err
 		}
-		v1_8_0, _ := gversion.NewVersion("1.8.0")
-		if k8sVersion.LessThan(v1_8_0) {
+		v1_7_0, _ := gversion.NewVersion("1.7.0")
+		if k8sVersion.LessThan(v1_7_0) {
 			// If we haven't done this the deprecated field would have priority
 			ops = append(ops, &ReplaceOperation{
 				Path:  pathPrefix + "deprecatedPublicIPs",

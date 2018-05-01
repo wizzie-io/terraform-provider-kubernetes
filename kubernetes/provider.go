@@ -4,17 +4,32 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"sync"
+
+	"path/filepath"
+	"time"
 
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
 	"github.com/mitchellh/go-homedir"
-	kubernetes "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	khomedir "k8s.io/client-go/util/homedir"
 )
+
+type kubernetesProvider struct {
+	cfg               *restclient.Config
+	conn              *kubernetes.Clientset
+	discoveryCacheDir string
+	discoClient       *CachedDiscoveryClient
+	mu                sync.Mutex
+}
 
 func Provider() terraform.ResourceProvider {
 	return &schema.Provider{
@@ -181,7 +196,75 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		return nil, fmt.Errorf("Failed to configure: %s", err)
 	}
 
-	return k, nil
+	providerInstance := &kubernetesProvider{
+		conn: k,
+		cfg:  cfg,
+	}
+
+	err = providerInstance.prepareDiscoveryCacheClient(d)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to configure discovery client: %s", err)
+	}
+
+	return providerInstance, err
+}
+
+func (p *kubernetesProvider) prepareDiscoveryCacheClient(d *schema.ResourceData) error {
+	// The more groups you have, the more discovery requests you need to make.
+	// given 25 groups (our groups + a few custom resources) with one-ish version each, discovery needs to make 50 requests
+	// double it just so we don't end up here again for a while.  This config is only used for discovery.
+	p.cfg.Burst = 100
+
+	if p.discoClient == nil {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+
+		if p.discoClient != nil {
+			return nil
+		}
+
+		p.discoveryCacheDir = computeDiscoverCacheDir(filepath.Join(khomedir.HomeDir(), ".kube", "cache", "discovery"), p.cfg.Host)
+
+		if p.discoveryCacheDir != "" {
+			wt := p.cfg.WrapTransport
+			p.cfg.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
+				if wt != nil {
+					rt = wt(rt)
+				}
+				return NewCacheRoundTripper(p.discoveryCacheDir, rt)
+			}
+		} else {
+			return fmt.Errorf("could not determine discovery cache directory")
+		}
+
+		discoveryClient, err := discovery.NewDiscoveryClientForConfig(p.cfg)
+		if err != nil {
+			return err
+		}
+		discoClient, err := NewCachedDiscoveryClient(discoveryClient, p.discoveryCacheDir, time.Duration(10*time.Minute)), nil
+		if err != nil {
+			return err
+		}
+
+		p.discoClient = discoClient
+		log.Printf("[DEBUG] Initialized discovery cache client")
+
+		start := time.Now()
+		vInfo, err := p.discoClient.ServerVersion()
+		if err != nil {
+			log.Println("[WARN] could not retrieve Server Version")
+		} else {
+			log.Printf("[INFO] Kubernetes Server [%s] Version: %s\n", p.cfg.Host, vInfo.String())
+
+			_, err = p.discoClient.ServerResources()
+			if err != nil {
+				log.Println("[WARN] could not retrieve APIResourceList")
+			} else {
+				log.Printf("[DEBUG] retrieved resource list in %v\n", time.Now().Sub(start))
+			}
+		}
+	}
+	return nil
 }
 
 func tryLoadingConfigFile(d *schema.ResourceData) (*restclient.Config, error) {

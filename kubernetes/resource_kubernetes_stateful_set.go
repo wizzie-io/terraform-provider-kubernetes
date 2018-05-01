@@ -1,18 +1,25 @@
 package kubernetes
 
 import (
+	errs "errors"
 	"fmt"
 	"log"
 
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/terraform"
+	"k8s.io/api/apps/v1"
+	"k8s.io/api/apps/v1beta1"
+	"k8s.io/api/apps/v1beta2"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	pkgApi "k8s.io/apimachinery/pkg/types"
-	kubernetes "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/apis/apps/v1beta1"
 )
+
+const statefulSetResourceGroupName = "statefulsets"
+
+var statefulSetAPIGroups = []APIGroup{appsV1, appsV1beta2, appsV1beta1}
+var statefulSetNotSupportedError = errs.New("could not find Kubernetes API group that supports StatefulSet resources")
 
 func resourceKubernetesStatefulSet() *schema.Resource {
 	return &schema.Resource{
@@ -149,7 +156,8 @@ func resourceKubernetesStatefulSet() *schema.Resource {
 }
 
 func resourceKubernetesStatefulSetCreate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
+	conn := kp.conn
 
 	metadata := expandMetadata(d.Get("metadata").([]interface{}))
 	spec, err := expandStatefulSetSpec(d.Get("spec").([]interface{}))
@@ -162,24 +170,49 @@ func resourceKubernetesStatefulSetCreate(d *schema.ResourceData, meta interface{
 		metadata.Namespace = "default"
 	}
 
-	statefulSet := v1beta1.StatefulSet{
+	statefulSetV1 := v1.StatefulSet{
 		ObjectMeta: metadata,
 		Spec:       spec,
 	}
 
-	log.Printf("[INFO] Creating new Stateful Set: %#v", statefulSet)
-	out, err := conn.AppsV1beta1().StatefulSets(metadata.Namespace).Create(&statefulSet)
+	outStatefulSetV1 := &v1.StatefulSet{}
+
+	log.Printf("[INFO] Creating new Stateful Set: %#v", statefulSetV1)
+	apiGroup, err := kp.highestSupportedAPIGroup(statefulSetResourceGroupName, statefulSetAPIGroups...)
+	if err != nil {
+		return err
+	}
+	switch apiGroup {
+	case appsV1:
+		outStatefulSetV1, err = conn.AppsV1().StatefulSets(metadata.Namespace).Create(&statefulSetV1)
+
+	case appsV1beta2:
+		beta := &v1beta2.StatefulSet{}
+		Convert(statefulSetV1, beta)
+		beta, err = conn.AppsV1beta2().StatefulSets(beta.ObjectMeta.Namespace).Create(beta)
+		Convert(beta, outStatefulSetV1)
+
+	case appsV1beta1:
+		beta := &v1beta1.StatefulSet{}
+		Convert(statefulSetV1, beta)
+		beta, err = conn.AppsV1beta1().StatefulSets(beta.ObjectMeta.Namespace).Create(beta)
+		Convert(beta, outStatefulSetV1)
+
+	default:
+		err = statefulSetNotSupportedError
+	}
+
 	if err != nil {
 		return fmt.Errorf("Failed to create Stateful Set: %s", err)
 	}
 
-	d.SetId(buildId(out.ObjectMeta))
+	d.SetId(buildId(outStatefulSetV1.ObjectMeta))
 
 	log.Printf("[DEBUG] Waiting for Stateful Set %s to schedule %d replicas",
-		d.Id(), *out.Spec.Replicas)
+		d.Id(), *outStatefulSetV1.Spec.Replicas)
 	// 10 mins should be sufficient for scheduling ~10k replicas
 	err = resource.Retry(d.Timeout(schema.TimeoutCreate),
-		waitForStatefulSetReplicasFunc(conn, out.GetNamespace(), out.GetName()))
+		waitForStatefulSetReplicasFunc(kp, outStatefulSetV1.GetNamespace(), outStatefulSetV1.GetName()))
 	if err != nil {
 		return err
 	}
@@ -187,17 +220,17 @@ func resourceKubernetesStatefulSetCreate(d *schema.ResourceData, meta interface{
 	// but that means checking each pod status separately (which can be expensive at scale)
 	// as there's no aggregate data available from the API
 
-	log.Printf("[INFO] Submitted new statefulSet: %#v", out)
+	log.Printf("[INFO] Submitted new statefulSet: %#v", outStatefulSetV1)
 
 	return resourceKubernetesStatefulSetRead(d, meta)
 }
 
 func resourceKubernetesStatefulSetRead(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
-
+	kp := meta.(*kubernetesProvider)
 	namespace, name, err := idParts(d.Id())
+
 	log.Printf("[INFO] Reading statefulSet %s", name)
-	statefulSet, err := conn.AppsV1beta1().StatefulSets(namespace).Get(name, metav1.GetOptions{})
+	statefulSet, err := readStatefulSet(kp, namespace, name)
 	if err != nil {
 		log.Printf("[DEBUG] Received error: %#v", err)
 		return err
@@ -228,7 +261,7 @@ func resourceKubernetesStatefulSetRead(d *schema.ResourceData, meta interface{})
 }
 
 func resourceKubernetesStatefulSetUpdate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
 
 	namespace, name, err := idParts(d.Id())
 
@@ -250,14 +283,16 @@ func resourceKubernetesStatefulSetUpdate(d *schema.ResourceData, meta interface{
 		return fmt.Errorf("Failed to marshal update operations: %s", err)
 	}
 	log.Printf("[INFO] Updating statefulSet %q: %v", name, string(data))
-	out, err := conn.AppsV1beta1().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
+
+	out, err := patchStatefulSet(d, kp, data)
 	if err != nil {
 		return fmt.Errorf("Failed to update statefulSet: %s", err)
 	}
+
 	log.Printf("[INFO] Submitted updated statefulSet: %#v", out)
 
 	err = resource.Retry(d.Timeout(schema.TimeoutUpdate),
-		waitForStatefulSetReplicasFunc(conn, namespace, name))
+		waitForStatefulSetReplicasFunc(kp, namespace, name))
 	if err != nil {
 		return err
 	}
@@ -266,7 +301,8 @@ func resourceKubernetesStatefulSetUpdate(d *schema.ResourceData, meta interface{
 }
 
 func resourceKubernetesStatefulSetDelete(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
+	conn := kp.conn
 
 	namespace, name, err := idParts(d.Id())
 	log.Printf("[INFO] Deleting statefulSet: %#v", name)
@@ -281,19 +317,34 @@ func resourceKubernetesStatefulSetDelete(d *schema.ResourceData, meta interface{
 	if err != nil {
 		return err
 	}
-	_, err = conn.AppsV1beta1().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
+
+	_, err = patchStatefulSet(d, kp, data)
 	if err != nil {
 		return err
 	}
 
 	// Wait until all replicas are gone
 	err = resource.Retry(d.Timeout(schema.TimeoutDelete),
-		waitForStatefulSetReplicasFunc(conn, namespace, name))
+		waitForStatefulSetReplicasFunc(kp, namespace, name))
 	if err != nil {
 		return err
 	}
 
-	err = conn.AppsV1beta1().StatefulSets(namespace).Delete(name, &metav1.DeleteOptions{})
+	apiGroup, err := kp.highestSupportedAPIGroup(statefulSetResourceGroupName, statefulSetAPIGroups...)
+	if err != nil {
+		return err
+	}
+	switch apiGroup {
+	case appsV1:
+		err = conn.AppsV1().StatefulSets(namespace).Delete(name, &metav1.DeleteOptions{})
+	case appsV1beta2:
+		err = conn.AppsV1beta2().StatefulSets(namespace).Delete(name, &metav1.DeleteOptions{})
+	case appsV1beta1:
+		err = conn.AppsV1beta1().StatefulSets(namespace).Delete(name, &metav1.DeleteOptions{})
+	default:
+		err = statefulSetNotSupportedError
+	}
+
 	if err != nil {
 		return err
 	}
@@ -305,7 +356,7 @@ func resourceKubernetesStatefulSetDelete(d *schema.ResourceData, meta interface{
 }
 
 func resourceKubernetesStatefulSetExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	conn := meta.(*kubernetes.Clientset)
+	kp := meta.(*kubernetesProvider)
 
 	namespace, name, err := idParts(d.Id())
 	if err != nil {
@@ -313,7 +364,7 @@ func resourceKubernetesStatefulSetExists(d *schema.ResourceData, meta interface{
 	}
 
 	log.Printf("[INFO] Checking statefulSet %s", name)
-	_, err = conn.AppsV1beta1().StatefulSets(namespace).Get(name, metav1.GetOptions{})
+	_, err = readStatefulSet(kp, namespace, name)
 	if err != nil {
 		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
 			return false, nil
@@ -323,18 +374,95 @@ func resourceKubernetesStatefulSetExists(d *schema.ResourceData, meta interface{
 	return true, err
 }
 
-func waitForStatefulSetReplicasFunc(conn *kubernetes.Clientset, ns, name string) resource.RetryFunc {
+func patchStatefulSet(d *schema.ResourceData, kp *kubernetesProvider, data []byte) (ss *v1.StatefulSet, err error) {
+	conn := kp.conn
+	ss = &v1.StatefulSet{}
+	namespace, name, err := idParts(d.Id())
+
+	apiGroup, err := kp.highestSupportedAPIGroup(statefulSetResourceGroupName, statefulSetAPIGroups...)
+	if err != nil {
+		return nil, err
+	}
+	switch apiGroup {
+	case appsV1:
+		ss, err = conn.AppsV1().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
+		if err != nil {
+			return
+		}
+
+	case appsV1beta2:
+		beta := &v1beta2.StatefulSet{}
+
+		beta, err = conn.AppsV1beta2().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
+		if err != nil {
+			return
+		}
+
+		Convert(beta, ss)
+
+	case appsV1beta1:
+		beta := &v1beta1.StatefulSet{}
+
+		beta, err = conn.AppsV1beta1().StatefulSets(namespace).Patch(name, pkgApi.JSONPatchType, data)
+		if err != nil {
+			return
+		}
+
+		Convert(beta, ss)
+
+	default:
+		err = statefulSetNotSupportedError
+	}
+
+	return
+}
+
+func readStatefulSet(kp *kubernetesProvider, namespace, name string) (ss *v1.StatefulSet, err error) {
+	log.Printf("[INFO] Reading StatefulSet %s", name)
+	conn := kp.conn
+	ss = &v1.StatefulSet{}
+
+	apiGroup, err := kp.highestSupportedAPIGroup(statefulSetResourceGroupName, statefulSetAPIGroups...)
+	if err != nil {
+		return nil, err
+	}
+	switch apiGroup {
+	case appsV1:
+		ss, err = conn.AppsV1().StatefulSets(namespace).Get(name, metav1.GetOptions{})
+
+	case appsV1beta2:
+		beta := &v1beta2.StatefulSet{}
+		beta, err = conn.AppsV1beta2().StatefulSets(namespace).Get(name, metav1.GetOptions{})
+		if err == nil {
+			Convert(beta, ss)
+		}
+
+	case appsV1beta1:
+		beta := &v1beta1.StatefulSet{}
+		beta, err = conn.AppsV1beta1().StatefulSets(namespace).Get(name, metav1.GetOptions{})
+		if err == nil {
+			Convert(beta, ss)
+		}
+
+	default:
+		err = statefulSetNotSupportedError
+	}
+
+	return ss, err
+}
+
+func waitForStatefulSetReplicasFunc(kp *kubernetesProvider, ns, name string) resource.RetryFunc {
 	return func() *resource.RetryError {
-		statefulSet, err := conn.AppsV1beta1().StatefulSets(ns).Get(name, metav1.GetOptions{})
+		statefulSet, err := readStatefulSet(kp, ns, name)
 		if err != nil {
 			return resource.NonRetryableError(err)
 		}
 
-		desiredReplicas := *statefulSet.Spec.Replicas
+		desiredReplicas := statefulSet.Spec.Replicas
 		log.Printf("[DEBUG] Current number of labelled replicas of %q: %d (of %d)\n",
 			statefulSet.GetName(), statefulSet.Status.Replicas, desiredReplicas)
 
-		if statefulSet.Status.Replicas == desiredReplicas {
+		if statefulSet.Status.Replicas == *desiredReplicas {
 			return nil
 		}
 
