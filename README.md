@@ -1,47 +1,160 @@
-# Terraform Provider
+# Kubernetes Terraform Provider
 
-- Website: https://www.terraform.io
-- [![Gitter chat](https://badges.gitter.im/hashicorp-terraform/Lobby.png)](https://gitter.im/hashicorp-terraform/Lobby)
-- Mailing list: [Google Groups](http://groups.google.com/group/terraform-tool)
+This provider is a fork of the official Kubernetes provider developed by HashiCorp.
+This fork supports the following resources in addition to the official provider:
 
-<img src="https://cdn.rawgit.com/hashicorp/terraform-website/master/content/source/assets/images/logo-hashicorp.svg" width="600px">
+- `DaemonSets`
+- `Deployments`
+- `Ingress`
+- `StatefulSets`
 
-Maintainers
------------
+## Supported Kubernetes Versions
 
-This provider plugin is maintained by the Terraform team at [HashiCorp](https://www.hashicorp.com/).
+The latest build of this provider uses v6.0 of the kubernetes [client-go](https://github.com/kubernetes/client-go) library, and has been tested with the following Kubernetes versions:
+
+- 1.7.x
+- 1.8.x
+- 1.9.x
 
 ## Requirements
 
-
--	[Terraform](https://www.terraform.io/downloads.html) 0.10.x
--	[Go](https://golang.org/doc/install) 1.9 (to build the provider plugin)
+-	[Terraform](https://www.terraform.io/downloads.html) 0.11.x
+-	[Go](https://golang.org/doc/install) 1.10 (to build the provider plugin)
 
 ## Building The Provider
 
-Clone repository to: `$GOPATH/src/github.com/terraform-providers/terraform-provider-$PROVIDER_NAME`
+Clone repository to: `$GOPATH/src/github.com/sl1pm4t/terraform-provider-kubernetes`
 
 ```sh
-$ mkdir -p $GOPATH/src/github.com/terraform-providers; cd $GOPATH/src/github.com/terraform-providers
-$ git clone git@github.com:terraform-providers/terraform-provider-$PROVIDER_NAME
+$ mkdir -p $GOPATH/src/github.com/sl1pm4t; cd $GOPATH/src/github.com/sl1pm4t
+$ git clone git@github.com:sl1pm4t/terraform-provider-kubernetes
 ```
 
 Enter the provider directory and build the provider
 
 ```sh
-$ cd $GOPATH/src/github.com/terraform-providers/terraform-provider-$PROVIDER_NAME
+$ cd $GOPATH/src/github.com/sl1pm4t/terraform-provider-kubernetes
 $ make build
 ```
 
 ## Using the provider
 
-- [ ] Fill in for each provider
+**Provider Configuration**
+
+##### Simplest - kubectl configuration
+```hcl-terraform
+provider kubernetes {
+  # leave blank to pickup config from kubectl config of local system
+}
+```
+
+##### Explicit configuration
+```hcl-terraform
+provider "kubernetes" {
+  host     = "https://104.196.242.174"
+  username = "ClusterMaster"
+  password = "MindTheGap"
+
+  client_certificate     = "${file("~/.kube/client-cert.pem")}"
+  client_key             = "${file("~/.kube/client-key.pem")}"
+  cluster_ca_certificate = "${file("~/.kube/cluster-ca-cert.pem")}"
+}
+```
+
+**Deployment Resource**
+
+```hcl-terraform
+resource "kubernetes_deployment" "nginx" {
+
+  metadata {
+    name      = "nginx"
+    namespace = "web"
+  }
+
+  spec {
+    selector {
+      app = "nginx"
+    }
+
+    template {
+      metadata {
+        labels {
+          app = "nginx"
+        }
+      }
+
+      spec {
+        container {
+          image = "nginx:1.8"
+          name  = "app"
+
+          resources {
+            requests {
+              memory = "1Gi"
+              cpu    = "1"
+            }
+
+            limits {
+              memory = "2Gi"
+              cpu    = "2"
+            }
+          }
+
+          readiness_probe {
+            http_get {
+              path = "/health"
+              port = "90"
+            }
+
+            initial_delay_seconds = 10
+            period_seconds        = 10
+          }
+
+          liveness_probe {
+            exec {
+              command = ["/bin/health"]
+            }
+
+            initial_delay_seconds = 120
+            period_seconds        = 15
+          }
+
+          env {
+            name  = "CONFIG_FILE_LOCATION"
+            value = "/etc/app/config"
+          }
+
+          port {
+            container_port = 80
+          }
+
+          volume_mount {
+            name       = "config"
+            mount_path = "/etc/app/config"
+          }
+        }
+
+        init_container {
+          name  = "helloworld"
+          image = "debian"
+          command = ["/bin/echo", "hello", "world"]
+        }
+
+        volume {
+          name = "config"
+
+          config_map {
+            name = "app-config"
+          }
+        }
+
+      }
+    }
+  }
+}
+```
 
 ## Developing the Provider
-
-### Contributing Resources
-
-In order to prevent breaking changes and migration of user-created resources, resources included in this provider will be limited to `v1` APIs and not `alpha` or `beta`. You can find `v1` resources in the Kubernetes [API documentation](https://kubernetes.io/docs/reference/#api-reference) for the appropriate version of Kubernetes.
 
 ### Development Environment
 
@@ -52,7 +165,7 @@ To compile the provider, run `make build`. This will build the provider and put 
 ```sh
 $ make build
 ...
-$ $GOPATH/bin/terraform-provider-$PROVIDER_NAME
+$ $GOPATH/bin/terraform-provider-kubernetes
 ...
 ```
 
