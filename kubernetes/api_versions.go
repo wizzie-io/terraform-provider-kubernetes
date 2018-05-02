@@ -19,6 +19,8 @@ const (
 	appsV1
 	appsV1beta1
 	appsV1beta2
+	batchV1beta1
+	batchV2alpha1
 	extensionsV1beta1
 )
 
@@ -32,6 +34,10 @@ func (g APIGroup) String() string {
 		return "apps/v1beta2"
 	case extensionsV1beta1:
 		return "extensions/v1beta1"
+	case batchV1beta1:
+		return "batch/v1beta1"
+	case batchV2alpha1:
+		return "batch/v2alpha1"
 	default:
 		return "none"
 	}
