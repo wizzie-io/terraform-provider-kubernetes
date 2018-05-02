@@ -85,6 +85,9 @@ func resourceKubernetesCronJobCreate(d *schema.ResourceData, meta interface{}) e
 	default:
 		err = cronJobNotSupportedError
 	}
+	if err != nil {
+		return err
+	}
 
 	log.Printf("[INFO] Submitted new cron job: %#v", created)
 
@@ -139,8 +142,6 @@ func resourceKubernetesCronJobUpdate(d *schema.ResourceData, meta interface{}) e
 	default:
 		err = cronJobNotSupportedError
 	}
-
-	//out, err := conn.BatchV2alpha1().CronJobs(namespace).Patch(name, pkgApi.JSONPatchType, data)
 	if err != nil {
 		return err
 	}
