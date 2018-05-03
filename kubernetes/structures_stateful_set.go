@@ -75,9 +75,11 @@ func expandStatefulSetSpec(statefulSet []interface{}) (appsv1.StatefulSetSpec, e
 		return obj, nil
 	}
 	in := statefulSet[0].(map[string]interface{})
-	if v, ok := in["strategy"]; ok {
+
+	if v, ok := in["update_strategy"]; ok {
 		obj.UpdateStrategy = expandStatefulSetUpdateStrategy(v.([]interface{}))
 	}
+
 	obj.Replicas = ptrToInt32(int32(in["replicas"].(int)))
 	obj.Selector = &metav1.LabelSelector{
 		MatchLabels: expandStringMap(in["selector"].(map[string]interface{})),
@@ -127,8 +129,10 @@ func expandStatefulSetUpdateStrategy(p []interface{}) appsv1.StatefulSetUpdateSt
 	if v, ok := in["type"]; ok {
 		obj.Type = appsv1.StatefulSetUpdateStrategyType(v.(string))
 	}
-	if v, ok := in["rolling_update"]; ok {
-		obj.RollingUpdate = expandRollingUpdateStatefulSetStrategy(v.([]interface{}))
+	if obj.Type == appsv1.RollingUpdateStatefulSetStrategyType {
+		if v, ok := in["rolling_update"]; ok {
+			obj.RollingUpdate = expandRollingUpdateStatefulSetStrategy(v.([]interface{}))
+		}
 	}
 	return obj
 }
@@ -141,7 +145,7 @@ func expandRollingUpdateStatefulSetStrategy(p []interface{}) *appsv1.RollingUpda
 	in := p[0].(map[string]interface{})
 
 	if v, ok := in["partition"]; ok {
-		obj.Partition = ptrToInt32(v.(int32))
+		obj.Partition = ptrToInt32(int32(v.(int)))
 	}
 
 	return &obj
