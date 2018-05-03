@@ -81,6 +81,57 @@ func TestAccKubernetesStatefulSet_pvcTemplate(t *testing.T) {
 	})
 }
 
+func TestAccKubernetesStatefulSet_updateStrategy(t *testing.T) {
+	var sset v1.StatefulSet
+
+	statefulSetName := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckKubernetesStatefulSetDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKubernetesStatefulSetConfig_updateStrategy(statefulSetName, "RollingUpdate"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesStatefulSetExists("kubernetes_stateful_set.test", &sset),
+					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "metadata.0.name", statefulSetName),
+					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "metadata.0.labels.%", "0"),
+					resource.TestCheckResourceAttrSet("kubernetes_stateful_set.test", "metadata.0.generation"),
+					resource.TestCheckResourceAttrSet("kubernetes_stateful_set.test", "metadata.0.resource_version"),
+					resource.TestCheckResourceAttrSet("kubernetes_stateful_set.test", "metadata.0.self_link"),
+					resource.TestCheckResourceAttrSet("kubernetes_stateful_set.test", "metadata.0.uid"),
+					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "spec.0.service_name", statefulSetName),
+					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "spec.0.update_strategy.#", "1"),
+					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "spec.0.update_strategy.0.type", "RollingUpdate"),
+				),
+			},
+			{
+				Config: testAccKubernetesStatefulSetConfig_updateStrategy(statefulSetName, "OnDelete"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesStatefulSetExists("kubernetes_stateful_set.test", &sset),
+					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "metadata.0.name", statefulSetName),
+					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "spec.0.service_name", statefulSetName),
+					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "spec.0.update_strategy.#", "1"),
+					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "spec.0.update_strategy.0.type", "OnDelete"),
+				),
+			},
+			{
+				Config: testAccKubernetesStatefulSetConfig_updateStrategyRollingUpdate(statefulSetName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesStatefulSetExists("kubernetes_stateful_set.test", &sset),
+					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "metadata.0.name", statefulSetName),
+					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "spec.0.service_name", statefulSetName),
+					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "spec.0.update_strategy.#", "1"),
+					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "spec.0.update_strategy.0.type", "RollingUpdate"),
+					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "spec.0.update_strategy.0.rolling_update.#", "1"),
+					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "spec.0.update_strategy.0.rolling_update.0.partition", "1"),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckKubernetesStatefulSetExists(n string, obj *v1.StatefulSet) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
@@ -197,4 +248,91 @@ resource "kubernetes_stateful_set" "test" {
   }
 }
 `, name, name, image)
+}
+
+func testAccKubernetesStatefulSetConfig_updateStrategy(name, strategy string) string {
+	return fmt.Sprintf(`
+resource kubernetes_stateful_set "test" {
+  metadata {
+    name = "%s"
+  }
+
+  spec {
+    selector {
+      app = "pinger"
+    }
+
+    service_name = "%s"
+
+    update_strategy {
+      type = "%s"
+    }
+
+    replicas = 2
+
+    template {
+      metadata {
+        labels {
+          app = "pinger"
+        }
+      }
+
+      spec {
+        termination_grace_period_seconds = 5
+
+        container {
+          name = "pinger-a"
+          image = "debian:buster"
+          command = ["ping", "github.com"]
+        }
+      }
+    }
+  }
+}
+`, name, name, strategy)
+}
+
+func testAccKubernetesStatefulSetConfig_updateStrategyRollingUpdate(name string) string {
+	return fmt.Sprintf(`
+resource kubernetes_stateful_set "test" {
+  metadata {
+    name = "%s"
+  }
+
+  spec {
+    selector {
+      app = "pinger"
+    }
+
+    service_name = "%s"
+
+    update_strategy {
+      type = "RollingUpdate"
+	  rolling_update {
+        partition = 1
+      }
+    }
+
+    replicas = 2
+
+    template {
+      metadata {
+        labels {
+          app = "pinger"
+        }
+      }
+
+      spec {
+        termination_grace_period_seconds = 5
+
+        container {
+          name = "pinger-a"
+          image = "debian:buster"
+          command = ["ping", "github.com"]
+        }
+      }
+    }
+  }
+}
+`, name, name)
 }
