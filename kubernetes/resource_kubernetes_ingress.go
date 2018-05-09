@@ -1,14 +1,14 @@
 package kubernetes
 
 import (
-	"fmt"
 	"log"
+
+	"fmt"
 
 	"github.com/hashicorp/terraform/helper/schema"
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	pkgApi "k8s.io/apimachinery/pkg/types"
 )
 
 func resourceKubernetesIngress() *schema.Resource {
@@ -171,30 +171,28 @@ func resourceKubernetesIngressRead(d *schema.ResourceData, meta interface{}) err
 func resourceKubernetesIngressUpdate(d *schema.ResourceData, meta interface{}) error {
 	conn := meta.(*kubernetesProvider).conn
 
-	namespace, name, err := idParts(d.Id())
+	namespace, _, err := idParts(d.Id())
 	if err != nil {
 		return err
 	}
-	// Metadata
-	ops := patchMetadata("metadata.0.", "/metadata/", d)
 
-	// Spec
-	if d.HasChange("spec") {
-		diffOps := patchIngressSpec("spec.0.", "/spec/", d)
-		ops = append(ops, diffOps...)
+	metadata := expandMetadata(d.Get("metadata").([]interface{}))
+	spec := expandIngressSpec(d.Get("spec").([]interface{}))
+
+	if metadata.Namespace == "" {
+		metadata.Namespace = "default"
 	}
 
-	data, err := ops.MarshalJSON()
-	if err != nil {
-		return fmt.Errorf("Failed to marshal update operations: %s", err)
+	ingress := &v1beta1.Ingress{
+		ObjectMeta: metadata,
+		Spec:       spec,
 	}
-	log.Printf("[INFO] Updating ingress %q: %v", name, string(data))
-	out, err := conn.ExtensionsV1beta1().Ingresses(namespace).Patch(name, pkgApi.JSONPatchType, data)
+
+	out, err := conn.ExtensionsV1beta1().Ingresses(namespace).Update(ingress)
 	if err != nil {
 		return fmt.Errorf("Failed to update ingress: %s", err)
 	}
 	log.Printf("[INFO] Submitted updated ingress: %#v", out)
-	d.SetId(buildId(out.ObjectMeta))
 
 	return resourceKubernetesIngressRead(d, meta)
 }
