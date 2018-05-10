@@ -61,6 +61,20 @@ provider "kubernetes" {
 }
 ```
 
+##### Initialise provider with plugin directory
+
+After this fork has been downloaded and built into `$GOPATH` (as in the
+previous step), specify the location of the built binaries when
+initialising the project:
+
+    $ terraform init -plugin-dir=$GOPATH/bin
+
+This step is important in order to make terraform actually use this fork
+of the kubernetes provider. If you fail to do this upon the first init
+the official provider is downloaded instead.
+If this happens, delete the `.terraform/` folder that has been created
+inside your project folder and perform the above init again.
+
 **Deployment Resource**
 
 ```hcl-terraform
