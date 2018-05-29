@@ -27,7 +27,7 @@ Clone repository to: `$GOPATH/src/github.com/sl1pm4t/terraform-provider-kubernet
 
 ```sh
 $ mkdir -p $GOPATH/src/github.com/sl1pm4t; cd $GOPATH/src/github.com/sl1pm4t
-$ git clone git@github.com:sl1pm4t/terraform-provider-kubernetes
+$ git clone https://github.com/sl1pm4t/terraform-provider-kubernetes
 ```
 
 Enter the provider directory and build the provider
