@@ -541,6 +541,7 @@ resource "kubernetes_service" "test" {
 			target_port = 81
 		}
 		type = "LoadBalancer"
+		load_balancer_ip = "100.24.12.6" // New line added
 	}
 }`, name, name)
 }
