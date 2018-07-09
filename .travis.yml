@@ -12,6 +12,7 @@ script:
 branches:
   only:
   - custom
+  - /^v\d+\.\d+(\.\d+)?(-\S*)?$/
 before_deploy:
 - make targets
 deploy:
