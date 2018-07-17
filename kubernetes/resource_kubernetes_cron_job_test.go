@@ -55,6 +55,32 @@ func TestAccKubernetesCronJob_basic(t *testing.T) {
 	})
 }
 
+func TestAccKubernetesCronJob_extra(t *testing.T) {
+	var conf v1beta1.CronJob
+	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:      func() { testAccPreCheck(t) },
+		IDRefreshName: "kubernetes_cron_job.test",
+		Providers:     testAccProviders,
+		CheckDestroy:  testAccCheckKubernetesCronJobDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKubernetesCronJobConfig_extra(name),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesCronJobExists("kubernetes_cron_job.test", &conf),
+					resource.TestCheckResourceAttr("kubernetes_cron_job.test", "metadata.0.name", name),
+					resource.TestCheckResourceAttrSet("kubernetes_cron_job.test", "spec.0.schedule"),
+					resource.TestCheckResourceAttr("kubernetes_cron_job.test", "spec.0.concurrency_policy", "Forbid"),
+					resource.TestCheckResourceAttr("kubernetes_cron_job.test", "spec.0.successful_jobs_history_limit", "10"),
+					resource.TestCheckResourceAttr("kubernetes_cron_job.test", "spec.0.failed_jobs_history_limit", "10"),
+					resource.TestCheckResourceAttr("kubernetes_cron_job.test", "spec.0.starting_deadline_seconds", "60"),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckKubernetesCronJobDestroy(s *terraform.State) error {
 	kp := testAccProvider.Meta().(*kubernetesProvider)
 
@@ -151,6 +177,35 @@ resource "kubernetes_cron_job" "test" {
 							name = "hello"
 							image = "alpine"
 							command = ["echo", "'abcdef'"]
+						}
+					}
+				}
+			}
+		}
+	}
+}`, name)
+}
+
+func testAccKubernetesCronJobConfig_extra(name string) string {
+	return fmt.Sprintf(`
+resource "kubernetes_cron_job" "test" {
+	metadata {
+		name = "%s"
+	}
+	spec {
+		schedule = "1 0 * * *"
+    	concurrency_policy            = "Forbid"
+    	successful_jobs_history_limit = 10
+    	failed_jobs_history_limit     = 10
+    	starting_deadline_seconds     = 60
+		job_template {
+			spec {
+				template {
+					spec {
+						container {
+							name = "hello"
+							image = "alpine"
+							command = ["echo", "'hello'"]
 						}
 					}
 				}

@@ -2,10 +2,10 @@ package kubernetes
 
 import (
 	"github.com/hashicorp/terraform/helper/schema"
-	batchv2 "k8s.io/api/batch/v1beta1"
+	batchv1beta1 "k8s.io/api/batch/v1beta1"
 )
 
-func flattenCronJobSpec(in batchv2.CronJobSpec, d *schema.ResourceData) ([]interface{}, error) {
+func flattenCronJobSpec(in batchv1beta1.CronJobSpec, d *schema.ResourceData) ([]interface{}, error) {
 	att := make(map[string]interface{})
 
 	att["concurrency_policy"] = in.ConcurrencyPolicy
@@ -24,13 +24,13 @@ func flattenCronJobSpec(in batchv2.CronJobSpec, d *schema.ResourceData) ([]inter
 	att["job_template"] = jobTemplate
 
 	if in.StartingDeadlineSeconds != nil {
-		att["starting_deadline_seconds"] = int(*in.StartingDeadlineSeconds)
+		att["starting_deadline_seconds"] = int64(*in.StartingDeadlineSeconds)
 	} else {
 		att["starting_deadline_seconds"] = 0
 	}
 
 	if in.SuccessfulJobsHistoryLimit != nil {
-		att["successful_jobs_history_limit"] = int(*in.SuccessfulJobsHistoryLimit)
+		att["successful_jobs_history_limit"] = int32(*in.SuccessfulJobsHistoryLimit)
 	} else {
 		att["successful_jobs_history_limit"] = 3
 	}
@@ -38,7 +38,7 @@ func flattenCronJobSpec(in batchv2.CronJobSpec, d *schema.ResourceData) ([]inter
 	return []interface{}{att}, nil
 }
 
-func flattenJobTemplate(in batchv2.JobTemplateSpec, d *schema.ResourceData) ([]interface{}, error) {
+func flattenJobTemplate(in batchv1beta1.JobTemplateSpec, d *schema.ResourceData) ([]interface{}, error) {
 	att := make(map[string]interface{})
 
 	meta := flattenMetadata(in.ObjectMeta, d)
@@ -53,8 +53,8 @@ func flattenJobTemplate(in batchv2.JobTemplateSpec, d *schema.ResourceData) ([]i
 	return []interface{}{att}, nil
 }
 
-func expandCronJobSpec(j []interface{}) (batchv2.CronJobSpec, error) {
-	obj := batchv2.CronJobSpec{}
+func expandCronJobSpec(j []interface{}) (batchv1beta1.CronJobSpec, error) {
+	obj := batchv1beta1.CronJobSpec{}
 
 	if len(j) == 0 || j[0] == nil {
 		return obj, nil
@@ -62,7 +62,7 @@ func expandCronJobSpec(j []interface{}) (batchv2.CronJobSpec, error) {
 
 	in := j[0].(map[string]interface{})
 
-	obj.ConcurrencyPolicy = batchv2.ConcurrencyPolicy(in["concurrency_policy"].(string))
+	obj.ConcurrencyPolicy = batchv1beta1.ConcurrencyPolicy(in["concurrency_policy"].(string))
 
 	if v, ok := in["failed_jobs_history_limit"].(int); ok && v != 1 {
 		obj.FailedJobsHistoryLimit = ptrToInt32(int32(v))
@@ -81,7 +81,7 @@ func expandCronJobSpec(j []interface{}) (batchv2.CronJobSpec, error) {
 	}
 
 	if v, ok := in["successful_jobs_history_limit"].(int); ok && v != 3 {
-		obj.StartingDeadlineSeconds = ptrToInt64(int64(v))
+		obj.SuccessfulJobsHistoryLimit = ptrToInt32(int32(v))
 	}
 
 	if v, ok := in["suspend"].(bool); ok {
@@ -91,8 +91,8 @@ func expandCronJobSpec(j []interface{}) (batchv2.CronJobSpec, error) {
 	return obj, nil
 }
 
-func expandJobTemplate(in []interface{}) (batchv2.JobTemplateSpec, error) {
-	obj := batchv2.JobTemplateSpec{}
+func expandJobTemplate(in []interface{}) (batchv1beta1.JobTemplateSpec, error) {
+	obj := batchv1beta1.JobTemplateSpec{}
 
 	tpl := in[0].(map[string]interface{})
 
