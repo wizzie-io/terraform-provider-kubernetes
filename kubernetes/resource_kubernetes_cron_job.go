@@ -11,7 +11,6 @@ import (
 	"k8s.io/api/batch/v2alpha1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	pkgApi "k8s.io/apimachinery/pkg/types"
 )
 
 const cronJobResourceGroupName = "cronjobs"
@@ -100,27 +99,24 @@ func resourceKubernetesCronJobUpdate(d *schema.ResourceData, meta interface{}) e
 	kp := meta.(*kubernetesProvider)
 	conn := kp.conn
 
-	namespace, name, err := idParts(d.Id())
+	namespace, _, err := idParts(d.Id())
 	if err != nil {
 		return err
 	}
 
-	ops := patchMetadata("metadata.0.", "/metadata/", d)
-
-	if d.HasChange("spec") {
-		specOps, err := patchCronJobSpec("/spec", "spec.0.", d)
-		if err != nil {
-			return err
-		}
-		ops = append(ops, specOps...)
-	}
-
-	data, err := ops.MarshalJSON()
+	metadata := expandMetadata(d.Get("metadata").([]interface{}))
+	spec, err := expandCronJobSpec(d.Get("spec").([]interface{}))
 	if err != nil {
-		return fmt.Errorf("Failed to marshal update operations: %s", err)
+		return err
+	}
+	spec.JobTemplate.ObjectMeta.Annotations = metadata.Annotations
+
+	cronjob := &v1beta1.CronJob{
+		ObjectMeta: metadata,
+		Spec:       spec,
 	}
 
-	log.Printf("[INFO] Updating cron job %s: %s", d.Id(), ops)
+	log.Printf("[INFO] Updating cron job %s: %s", d.Id(), cronjob)
 
 	out := &v1beta1.CronJob{}
 	apiGroup, err := kp.highestSupportedAPIGroup(cronJobResourceGroupName, cronJobAPIGroups...)
@@ -129,15 +125,17 @@ func resourceKubernetesCronJobUpdate(d *schema.ResourceData, meta interface{}) e
 	}
 	switch apiGroup {
 	case batchV1beta1:
-		out, err = conn.BatchV1beta1().CronJobs(namespace).Patch(name, pkgApi.JSONPatchType, data)
+		out, err = conn.BatchV1beta1().CronJobs(namespace).Update(cronjob)
 
 	case batchV2alpha1:
-		beta, err2 := conn.BatchV2alpha1().CronJobs(namespace).Patch(name, pkgApi.JSONPatchType, data)
+		alpha := &v2alpha1.CronJob{}
+		Convert(cronjob, alpha)
+		alphaOut, err2 := conn.BatchV2alpha1().CronJobs(namespace).Update(alpha)
 		if err2 != nil {
 			err = err2
 			break
 		}
-		Convert(beta, out)
+		Convert(alphaOut, out)
 
 	default:
 		err = cronJobNotSupportedError
