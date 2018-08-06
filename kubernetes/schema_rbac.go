@@ -40,3 +40,35 @@ func policyRuleFields() map[string]*schema.Schema {
 	}
 	return s
 }
+
+func roleRefFields() map[string]*schema.Schema {
+	s := map[string]*schema.Schema{
+		"api_group": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Default:     "rbac.authorization.k8s.io",
+			Description: "APIGroup is the group for the resource being referenced",
+		},
+		"kind": {
+			Type:        schema.TypeString,
+			Required:    true,
+			Description: "Kind is the type of resource being referenced",
+		},
+		"name": {
+			Type:        schema.TypeString,
+			Required:    true,
+			Description: "Name is the name of resource being referenced",
+		},
+	}
+	return s
+}
+
+func rbacSubjectFields() map[string]*schema.Schema {
+	s := roleRefFields()
+	s["namespace"] = &schema.Schema{
+		Type:        schema.TypeString,
+		Optional:    true,
+		Description: `Namespace of the referenced object. If the object kind is non-namespace, such as "User" or "Group", and this value is not empty the Authorizer should report an error.`,
+	}
+	return s
+}

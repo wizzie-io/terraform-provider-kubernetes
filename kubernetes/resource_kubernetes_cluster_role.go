@@ -95,7 +95,7 @@ func resourceKubernetesClusterRoleUpdate(d *schema.ResourceData, meta interface{
 	log.Printf("[INFO] Updating cluster role %q: %v", name, cRole)
 	out, err := conn.RbacV1().ClusterRoles().Update(&cRole)
 	if err != nil {
-		return fmt.Errorf("Failed to update Config Map: %s", err)
+		return fmt.Errorf("Failed to update cluster role: %s", err)
 	}
 	log.Printf("[INFO] Submitted updated cluster role: %#v", out)
 	d.SetId(buildId(out.ObjectMeta))

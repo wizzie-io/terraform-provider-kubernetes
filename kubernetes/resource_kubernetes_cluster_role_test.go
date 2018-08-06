@@ -124,15 +124,6 @@ func testAccKubernetesClusterRoleConfig_basic(name string) string {
 	return fmt.Sprintf(`
 resource "kubernetes_cluster_role" "test" {
 	metadata {
-		annotations {
-			TestAnnotationOne = "one"
-			TestAnnotationTwo = "two"
-		}
-		labels {
-			TestLabelOne = "one"
-			TestLabelTwo = "two"
-			TestLabelThree = "three"
-		}
 		name = "%s"
 	}
 	rule {
@@ -147,14 +138,6 @@ func testAccKubernetesClusterRoleConfig_modified(name string) string {
 	return fmt.Sprintf(`
 resource "kubernetes_cluster_role" "test" {
 	metadata {
-		annotations {
-			TestAnnotationOne = "one"
-			Different = "1234"
-		}
-		labels {
-			TestLabelOne = "one"
-			TestLabelThree = "three"
-		}
 		name = "%s"
 	}
 	rule {
