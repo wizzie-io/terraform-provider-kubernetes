@@ -73,6 +73,15 @@ func flattenPodSpec(in v1.PodSpec) ([]interface{}, error) {
 		}
 		att["volume"] = v
 	}
+
+	if len(in.Tolerations) > 0 {
+		v, err := flattenTolerations(in.Tolerations)
+		if err != nil {
+			return []interface{}{att}, err
+		}
+		att["toleration"] = v
+	}
+
 	return []interface{}{att}, nil
 }
 
@@ -330,6 +339,31 @@ func flattenSecretVolumeSource(in *v1.SecretVolumeSource) []interface{} {
 	return []interface{}{att}
 }
 
+func flattenTolerations(tolerations []v1.Toleration) ([]interface{}, error) {
+	att := make([]interface{}, len(tolerations))
+	for i, v := range tolerations {
+		obj := map[string]interface{}{}
+
+		if v.Key != "" {
+			obj["key"] = v.Key
+		}
+		if v.Operator != "" {
+			obj["operator"] = v.Operator
+		}
+		if v.Value != "" {
+			obj["value"] = v.Value
+		}
+		if v.Effect != "" {
+			obj["effect"] = v.Effect
+		}
+		if v.TolerationSeconds != nil {
+			obj["toleration_seconds"] = *v.TolerationSeconds
+		}
+		att[i] = obj
+	}
+	return att, nil
+}
+
 // Expanders
 
 func expandPodTemplateSpec(template map[string]interface{}) (v1.PodTemplateSpec, error) {
@@ -446,6 +480,15 @@ func expandPodSpec(p []interface{}) (v1.PodSpec, error) {
 		}
 		obj.Volumes = cs
 	}
+
+	if v, ok := in["toleration"].([]interface{}); ok && len(v) > 0 {
+		cs, err := expandTolerations(v)
+		if err != nil {
+			return obj, err
+		}
+		obj.Tolerations = cs
+	}
+
 	return obj, nil
 }
 
@@ -732,6 +775,37 @@ func expandVolumes(volumes []interface{}) ([]v1.Volume, error) {
 		}
 		if v, ok := m["photon_persistent_disk"].([]interface{}); ok && len(v) > 0 {
 			vl[i].PhotonPersistentDisk = expandPhotonPersistentDiskVolumeSource(v)
+		}
+	}
+	return vl, nil
+}
+
+func expandTolerations(tolerations []interface{}) ([]v1.Toleration, error) {
+	if len(tolerations) == 0 {
+		return []v1.Toleration{}, nil
+	}
+	vl := make([]v1.Toleration, len(tolerations))
+	for i, c := range tolerations {
+		m := c.(map[string]interface{})
+
+		if value, ok := m["key"]; ok {
+			vl[i].Key = value.(string)
+		}
+
+		if value, ok := m["effect"].(string); ok {
+			vl[i].Effect = v1.TaintEffect(value)
+		}
+
+		if value, ok := m["operator"].(string); ok {
+			vl[i].Operator = v1.TolerationOperator(value)
+		}
+
+		if value, ok := m["value"]; ok {
+			vl[i].Value = value.(string)
+		}
+
+		if value, ok := m["toleration_seconds"].(int64); ok {
+			vl[i].TolerationSeconds = ptrToInt64(int64(value))
 		}
 	}
 	return vl, nil
