@@ -124,6 +124,8 @@ func Provider() terraform.ResourceProvider {
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
+			"kubernetes_cluster_role":              resourceKubernetesClusterRole(),
+			"kubernetes_cluster_role_binding":      resourceKubernetesClusterRoleBinding(),
 			"kubernetes_config_map":                resourceKubernetesConfigMap(),
 			"kubernetes_horizontal_pod_autoscaler": resourceKubernetesHorizontalPodAutoscaler(),
 			"kubernetes_job":                       resourceKubernetesJob(),
@@ -135,6 +137,8 @@ func Provider() terraform.ResourceProvider {
 			"kubernetes_persistent_volume_claim":   resourceKubernetesPersistentVolumeClaim(),
 			"kubernetes_pod":                       resourceKubernetesPod(),
 			"kubernetes_replication_controller":    resourceKubernetesReplicationController(),
+			"kubernetes_role":                      resourceKubernetesRole(),
+			"kubernetes_role_binding":              resourceKubernetesRoleBinding(),
 			"kubernetes_deployment":                resourceKubernetesDeployment(),
 			"kubernetes_daemonset":                 resourceKubernetesDaemonSet(),
 			"kubernetes_resource_quota":            resourceKubernetesResourceQuota(),
