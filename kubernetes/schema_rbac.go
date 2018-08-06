@@ -66,12 +66,29 @@ func roleRefFields() map[string]*schema.Schema {
 }
 
 func rbacSubjectFields() map[string]*schema.Schema {
-	s := roleRefFields()
-	s["kind"].ValidateFunc = validation.StringInSlice([]string{"Group", "ServiceAccount", "User"}, false)
-	s["namespace"] = &schema.Schema{
-		Type:        schema.TypeString,
-		Optional:    true,
-		Description: `Namespace of the referenced object. If the object kind is non-namespace, such as "User" or "Group", and this value is not empty the Authorizer should report an error.`,
+	s := map[string]*schema.Schema{
+		"api_group": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Default:     "",
+			Description: "APIGroup is the group for the resource being referenced",
+		},
+		"kind": {
+			Type:         schema.TypeString,
+			Required:     true,
+			Description:  "Kind is the type of resource being referenced",
+			ValidateFunc: validation.StringInSlice([]string{"Group", "ServiceAccount", "User"}, false),
+		},
+		"name": {
+			Type:        schema.TypeString,
+			Required:    true,
+			Description: "Name is the name of resource being referenced",
+		},
+		"namespace": &schema.Schema{
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: `Namespace of the referenced object. If the object kind is non-namespace, such as "User" or "Group", and this value is not empty the Authorizer should report an error.`,
+		},
 	}
 	return s
 }
