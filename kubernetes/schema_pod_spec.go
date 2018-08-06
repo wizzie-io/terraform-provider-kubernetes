@@ -181,41 +181,6 @@ func podSpecFields(isUpdatable bool) map[string]*schema.Schema {
 			Description: "List of volumes that can be mounted by containers belonging to the pod. More info: http://kubernetes.io/docs/user-guide/volumes",
 			Elem:        volumeSchema(),
 		},
-
-		"toleration": {
-			Type:        schema.TypeList,
-			Optional:    true,
-			Description: "If specified, the pod's tolerations",
-			Elem: &schema.Resource{
-				Schema: map[string]*schema.Schema{
-					"key": {
-						Type:        schema.TypeString,
-						Description: "Key is the taint key that the toleration applies to. https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.11/#toleration-v1-core",
-						Optional:    true,
-					},
-					"operator": {
-						Type:        schema.TypeString,
-						Description: "Operator represents a key's relationship to the value. https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.11/#toleration-v1-core",
-						Optional:    true,
-					},
-					"effect": {
-						Type:        schema.TypeString,
-						Description: "Effect indicates the taint effect to match. https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.11/#toleration-v1-core",
-						Optional:    true,
-					},
-					"toleration_seconds": {
-						Type:        schema.TypeInt,
-						Description: "TolerationSeconds represents the period of time the toleration (which must be of effect NoExecute, otherwise this field is ignored) tolerates the taint. https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.11/#toleration-v1-core",
-						Optional:    true,
-					},
-					"value": {
-						Type:        schema.TypeString,
-						Description: "Value is the taint value the toleration matches to. https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.11/#toleration-v1-core",
-						Optional:    true,
-					},
-				},
-			},
-		},
 	}
 
 	if !isUpdatable {
