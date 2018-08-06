@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/hashicorp/terraform/helper/validation"
 )
 
 func policyRuleFields() map[string]*schema.Schema {
@@ -33,7 +34,7 @@ func policyRuleFields() map[string]*schema.Schema {
 		},
 		"verbs": {
 			Type:        schema.TypeList,
-			Description: "Verbs is a list of Verbs that apply to ALL the ResourceKinds and AttributeRestrictions contained in this rule. VerbAll represents all kinds.",
+			Description: "Verbs is a list of Verbs that apply to ALL the ResourceKinds and AttributeRestrictions contained in this rule.",
 			Optional:    true,
 			Elem:        &schema.Schema{Type: schema.TypeString},
 		},
@@ -50,9 +51,10 @@ func roleRefFields() map[string]*schema.Schema {
 			Description: "APIGroup is the group for the resource being referenced",
 		},
 		"kind": {
-			Type:        schema.TypeString,
-			Required:    true,
-			Description: "Kind is the type of resource being referenced",
+			Type:         schema.TypeString,
+			Required:     true,
+			Description:  "Kind is the type of resource being referenced",
+			ValidateFunc: validation.StringInSlice([]string{"Role", "ClusterRole"}, false),
 		},
 		"name": {
 			Type:        schema.TypeString,
@@ -65,6 +67,7 @@ func roleRefFields() map[string]*schema.Schema {
 
 func rbacSubjectFields() map[string]*schema.Schema {
 	s := roleRefFields()
+	s["kind"].ValidateFunc = validation.StringInSlice([]string{"Group", "ServiceAccount", "User"}, false)
 	s["namespace"] = &schema.Schema{
 		Type:        schema.TypeString,
 		Optional:    true,
