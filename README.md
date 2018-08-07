@@ -3,10 +3,14 @@
 This provider is a fork of the official Kubernetes provider developed by HashiCorp.
 This fork supports the following resources in addition to the official provider:
 
-- `DaemonSets`
-- `Deployments`
+- `DaemonSet`
+- `Deployment`
 - `Ingress`
-- `StatefulSets`
+- `StatefulSet`
+- `Cluster Role`
+- `Cluster Role Binding`
+- `Role`
+- `Role Binding`
 
 ## Supported Kubernetes Versions
 
@@ -15,6 +19,7 @@ The latest build of this provider uses v6.0 of the kubernetes [client-go](https:
 - 1.7.x
 - 1.8.x
 - 1.9.x
+- 1.10.x
 
 ## Requirements
 
