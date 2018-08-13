@@ -10,7 +10,7 @@ func policyRuleFields() map[string]*schema.Schema {
 		"api_groups": {
 			Type:        schema.TypeList,
 			Description: "APIGroups is the name of the APIGroup that contains the resources. If multiple API groups are specified, any action requested against one of the enumerated resources in any API group will be allowed.",
-			Required:    true,
+			Optional:    true,
 			MinItems:    1,
 			Elem:        &schema.Schema{Type: schema.TypeString},
 		},
