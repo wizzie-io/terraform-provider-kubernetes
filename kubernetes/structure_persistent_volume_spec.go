@@ -315,6 +315,9 @@ func flattenPersistentVolumeSpec(in v1.PersistentVolumeSpec) []interface{} {
 	if len(in.AccessModes) > 0 {
 		att["access_modes"] = flattenPersistentVolumeAccessModes(in.AccessModes)
 	}
+	if len(in.MountOptions) > 0 {
+		att["mount_options"] = in.MountOptions
+	}
 	if in.PersistentVolumeReclaimPolicy != "" {
 		att["persistent_volume_reclaim_policy"] = in.PersistentVolumeReclaimPolicy
 	}
@@ -810,6 +813,9 @@ func expandPersistentVolumeSpec(l []interface{}) (v1.PersistentVolumeSpec, error
 	}
 	if v, ok := in["access_modes"].(*schema.Set); ok && v.Len() > 0 {
 		obj.AccessModes = expandPersistentVolumeAccessModes(v.List())
+	}
+	if v, ok := in["mount_options"].([]interface{}); ok && len(v) > 0 {
+		obj.MountOptions = sliceOfString(v)
 	}
 	if v, ok := in["persistent_volume_reclaim_policy"].(string); ok {
 		obj.PersistentVolumeReclaimPolicy = v1.PersistentVolumeReclaimPolicy(v)
