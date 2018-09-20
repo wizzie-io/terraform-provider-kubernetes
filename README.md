@@ -3,14 +3,16 @@
 This provider is a fork of the official Kubernetes provider developed by HashiCorp.
 This fork supports the following resources in addition to the official provider:
 
-- `DaemonSet`
-- `Deployment`
-- `Ingress`
-- `StatefulSet`
-- `Cluster Role`
-- `Cluster Role Binding`
-- `Role`
-- `Role Binding`
+- Cluster Role `kubernetes_cluster_role`
+- Cluster Role Binding `kubernetes_cluster_role_binding`
+- Cron Job `kubernetes_cron_job`
+- Daemonset `kubernetes_daemonset`
+- Deployment `kubernetes_deployment`
+- Ingress `kubernetes_ingress`
+- Job `kubernetes_job`
+- Role `kubernetes_role`
+- Role Binding `kubernetes_role_binding`
+- Stateful Set `kubernetes_stateful_set`
 
 ## Supported Kubernetes Versions
 
