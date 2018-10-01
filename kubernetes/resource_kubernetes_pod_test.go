@@ -465,6 +465,38 @@ func TestAccKubernetesPod_gke_with_nodeSelector(t *testing.T) {
 	})
 }
 
+func TestAccKubernetesPod_with_Toleration(t *testing.T) {
+	var conf api.Pod
+
+	podName := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
+	imageName := "nginx:1.7.9"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckKubernetesPodDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKubernetesPodConfigToleration(podName, imageName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesPodExists("kubernetes_pod.test", &conf),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.container.0.image", imageName),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.toleration.#", "2"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.toleration.0.key", "taintkey"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.toleration.0.value", "taintvalue"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.toleration.0.operator", ""),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.toleration.0.effect", ""),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.toleration.1.key", "taintkey2"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.toleration.1.value", ""),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.toleration.1.operator", "Exists"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.toleration.1.effect", "NoExecute"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.toleration.1.toleration_seconds", "30"),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckKubernetesPodDestroy(s *terraform.State) error {
 	conn := testAccProvider.Meta().(*kubernetesProvider).conn
 
@@ -1026,4 +1058,31 @@ resource "kubernetes_pod" "test" {
   }
 }
 `, podName, imageName, args)
+}
+
+func testAccKubernetesPodConfigToleration(podName, imageName string) string {
+	return fmt.Sprintf(`
+resource "kubernetes_pod" "test" {
+  metadata {
+    name = "%s"
+  }
+
+  spec {
+    container {
+      image = "%s"
+      name  = "containername"
+    }
+    toleration {
+      key   = "taintkey"
+      value = "taintvalue"
+	}
+    toleration {
+      key                = "taintkey2"
+      operator           = "Exists"
+      toleration_seconds = 30
+      effect             = "NoExecute"
+	}
+  }
+}
+`, podName, imageName)
 }

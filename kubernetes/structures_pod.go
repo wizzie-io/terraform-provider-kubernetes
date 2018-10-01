@@ -1,8 +1,9 @@
 package kubernetes
 
 import (
-	"fmt"
+	"log"
 	"strconv"
+	"strings"
 
 	"github.com/hashicorp/terraform/helper/schema"
 	"k8s.io/api/core/v1"
@@ -147,40 +148,25 @@ func flattenSeLinuxOptions(in *v1.SELinuxOptions) []interface{} {
 }
 
 func flattenTolerations(tolerations []v1.Toleration) ([]map[string]interface{}, error) {
-	ts := make([]map[string]interface{}, len(tolerations))
-	for i, t := range tolerations {
-		var operator string
-		switch t.Operator {
-		case v1.TolerationOpEqual:
-			operator = "Equal"
-		case v1.TolerationOpExists:
-			operator = "Exists"
-		default:
-			return []map[string]interface{}{}, fmt.Errorf("Unknown toleration operator %v", t.Operator)
+	//ts := make([]map[string]interface{}, len(tolerations))
+	ts := []map[string]interface{}{}
+	for _, t := range tolerations {
+		// The API Server may automatically add several Tolerations to pods, strip these to avoid TF diff.
+		if strings.Contains(t.Key, "node.kubernetes.io/") {
+			log.Printf("[INFO] ignoring toleration with key: %s", t.Key)
+			continue
 		}
-
-		var effect string
-		switch t.Effect {
-		case v1.TaintEffectNoExecute:
-			effect = "NoExecute"
-		case v1.TaintEffectNoSchedule:
-			effect = "NoSchedule"
-		case v1.TaintEffectPreferNoSchedule:
-			effect = "PreferNoSchedule"
-		default:
-			return []map[string]interface{}{}, fmt.Errorf("Unknown taint effect %v", t.Effect)
-		}
-
-		ts[i] = map[string]interface{}{
+		tol := map[string]interface{}{
 			"key":      t.Key,
-			"operator": operator,
-			"effect":   effect,
+			"operator": string(t.Operator),
+			"effect":   string(t.Effect),
 			"value":    t.Value,
 		}
 
 		if t.TolerationSeconds != nil {
-			ts[i]["toleration_seconds"] = *(t.TolerationSeconds)
+			tol["toleration_seconds"] = *(t.TolerationSeconds)
 		}
+		ts = append(ts, tol)
 	}
 	return ts, nil
 }
@@ -487,18 +473,19 @@ func expandPodSpec(p []interface{}) (v1.PodSpec, error) {
 		obj.TerminationGracePeriodSeconds = ptrToInt64(int64(v))
 	}
 
-	if v, ok := in["toleration"].([]map[string]interface{}); ok && len(v) > 0 {
+	if v, ok := in["toleration"].([]interface{}); ok && len(v) > 0 {
 		tolerations := make([]v1.Toleration, len(v))
-		for i, t := range v {
+		for i, tmap := range v {
+			t := tmap.(map[string]interface{})
 			tol := v1.Toleration{
 				Key:      t["key"].(string),
-				Operator: tolerationOperator(t["operator"].(string)),
-				Effect:   taintEffect(t["effect"].(string)),
+				Operator: v1.TolerationOperator(t["operator"].(string)),
+				Effect:   v1.TaintEffect(t["effect"].(string)),
 				Value:    t["value"].(string),
 			}
-			sec := t["toleration_seconds"].(int64)
+			sec := t["toleration_seconds"].(int)
 			if sec > 0 {
-				tol.TolerationSeconds = &sec
+				tol.TolerationSeconds = ptrToInt64(int64(sec))
 			}
 			tolerations[i] = tol
 		}
@@ -513,30 +500,6 @@ func expandPodSpec(p []interface{}) (v1.PodSpec, error) {
 		obj.Volumes = cs
 	}
 	return obj, nil
-}
-
-func tolerationOperator(operator string) (val v1.TolerationOperator) {
-	switch operator {
-	case "Exists":
-		val = v1.TolerationOpExists
-	case "Equal":
-		val = v1.TolerationOpEqual
-	}
-	return
-}
-
-func taintEffect(effect string) (val v1.TaintEffect) {
-	switch effect {
-	case "NoSchedule":
-		val = v1.TaintEffectNoSchedule
-	case "PreferNoSchedule":
-		val = v1.TaintEffectPreferNoSchedule
-	// case "NoScheduleNoAdmit":
-	// 	val = v1.TaintEffectNoScheduleNoAdmit
-	case "NoExecute":
-		val = v1.TaintEffectNoExecute
-	}
-	return
 }
 
 func expandPodSecurityContext(l []interface{}) *v1.PodSecurityContext {
