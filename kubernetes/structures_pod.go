@@ -1,7 +1,9 @@
 package kubernetes
 
 import (
+	"log"
 	"strconv"
+	"strings"
 
 	"github.com/hashicorp/terraform/helper/schema"
 	"k8s.io/api/core/v1"
@@ -64,6 +66,14 @@ func flattenPodSpec(in v1.PodSpec) ([]interface{}, error) {
 
 	if in.TerminationGracePeriodSeconds != nil {
 		att["termination_grace_period_seconds"] = *in.TerminationGracePeriodSeconds
+	}
+
+	if len(in.Tolerations) > 0 {
+		v, err := flattenTolerations(in.Tolerations)
+		if err != nil {
+			return []interface{}{att}, err
+		}
+		att["toleration"] = v
 	}
 
 	if len(in.Volumes) > 0 {
@@ -135,6 +145,30 @@ func flattenSeLinuxOptions(in *v1.SELinuxOptions) []interface{} {
 		att["level"] = in.Level
 	}
 	return []interface{}{att}
+}
+
+func flattenTolerations(tolerations []v1.Toleration) ([]map[string]interface{}, error) {
+	//ts := make([]map[string]interface{}, len(tolerations))
+	ts := []map[string]interface{}{}
+	for _, t := range tolerations {
+		// The API Server may automatically add several Tolerations to pods, strip these to avoid TF diff.
+		if strings.Contains(t.Key, "node.kubernetes.io/") {
+			log.Printf("[INFO] ignoring toleration with key: %s", t.Key)
+			continue
+		}
+		tol := map[string]interface{}{
+			"key":      t.Key,
+			"operator": string(t.Operator),
+			"effect":   string(t.Effect),
+			"value":    t.Value,
+		}
+
+		if t.TolerationSeconds != nil {
+			tol["toleration_seconds"] = *(t.TolerationSeconds)
+		}
+		ts = append(ts, tol)
+	}
+	return ts, nil
 }
 
 func flattenVolumes(volumes []v1.Volume) ([]interface{}, error) {
@@ -437,6 +471,25 @@ func expandPodSpec(p []interface{}) (v1.PodSpec, error) {
 
 	if v, ok := in["termination_grace_period_seconds"].(int); ok {
 		obj.TerminationGracePeriodSeconds = ptrToInt64(int64(v))
+	}
+
+	if v, ok := in["toleration"].([]interface{}); ok && len(v) > 0 {
+		tolerations := make([]v1.Toleration, len(v))
+		for i, tmap := range v {
+			t := tmap.(map[string]interface{})
+			tol := v1.Toleration{
+				Key:      t["key"].(string),
+				Operator: v1.TolerationOperator(t["operator"].(string)),
+				Effect:   v1.TaintEffect(t["effect"].(string)),
+				Value:    t["value"].(string),
+			}
+			sec := t["toleration_seconds"].(int)
+			if sec > 0 {
+				tol.TolerationSeconds = ptrToInt64(int64(sec))
+			}
+			tolerations[i] = tol
+		}
+		obj.Tolerations = tolerations
 	}
 
 	if v, ok := in["volume"].([]interface{}); ok && len(v) > 0 {
