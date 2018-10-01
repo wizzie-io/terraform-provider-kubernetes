@@ -2751,6 +2751,12 @@
 			"revisionTime": "2017-12-14T00:50:12Z"
 		},
 		{
+			"checksumSHA1": "8p53PAL0aUXY93o9d8eIs2BSHUQ=",
+			"path": "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions",
+			"revision": "c0b566b8903bc2b6e3f4e41d35b3ae9e5d170c30",
+			"revisionTime": "2018-09-25T13:13:23Z"
+		},
+		{
 			"checksumSHA1": "PHEosEphl6qMGMG2huK39aeHsVk=",
 			"path": "k8s.io/apimachinery/pkg/api/equality",
 			"revision": "180eddb345a5be3a157cea1c624700ad5bd27b8f",
@@ -2941,6 +2947,13 @@
 			"path": "k8s.io/apimachinery/pkg/util/json",
 			"revision": "180eddb345a5be3a157cea1c624700ad5bd27b8f",
 			"revisionTime": "2017-11-27T17:38:05Z"
+		},
+		{
+			"checksumSHA1": "y1dxj1ipJgt2PRXXSXDmXrSka6A=",
+			"origin": "k8s.io/apiextensions-apiserver/vendor/k8s.io/apimachinery/pkg/util/naming",
+			"path": "k8s.io/apimachinery/pkg/util/naming",
+			"revision": "c0b566b8903bc2b6e3f4e41d35b3ae9e5d170c30",
+			"revisionTime": "2018-09-25T13:13:23Z"
 		},
 		{
 			"checksumSHA1": "kxdjwhRnxHHLBBqfgasjlSSsubM=",
