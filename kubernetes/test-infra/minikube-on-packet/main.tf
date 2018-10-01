@@ -1,39 +1,39 @@
-provider "packet" { }
+provider "packet" {}
 
 variable "kubernetes_version" {
-  type = "string"
+  type        = "string"
   description = "See 'minikube get-k8s-versions' for all available versions"
 }
 
 variable "packet_facility" {
-  type = "string"
+  type        = "string"
   description = "See https://www.packet.net/developers/api/facilities/ for all available facilities"
-  default = "ams1"
+  default     = "ams1"
 }
 
 variable "packet_plan" {
-  type = "string"
+  type        = "string"
   description = "See https://www.packet.net/developers/api/plans/ for all available plans"
-  default = "baremetal_1"
+  default     = "baremetal_1"
 }
 
 variable "local_tunnel_port" {
-  type = "string"
+  type    = "string"
   default = "32000"
 }
 
 variable "kubernetes_api_port" {
-  type = "string"
+  type    = "string"
   default = "8443"
 }
 
 variable "private_ssh_key_location" {
-  type = "string"
+  type    = "string"
   default = "./id_ecdsa"
 }
 
 variable "dotminikube_path" {
-  type = "string"
+  type    = "string"
   default = "client/.minikube"
 }
 
@@ -75,15 +75,18 @@ resource "packet_device" "minikube" {
       user        = "root"
       private_key = "${tls_private_key.ssh.private_key_pem}"
     }
+
     source      = "${path.module}/10-install-virtualbox.sh"
     destination = "/tmp/10-install-virtualbox.sh"
   }
+
   provisioner "file" {
     connection {
       type        = "ssh"
       user        = "root"
       private_key = "${tls_private_key.ssh.private_key_pem}"
     }
+
     source      = "${path.module}/20-install-minikube.sh"
     destination = "/tmp/20-install-minikube.sh"
   }
@@ -94,13 +97,16 @@ resource "packet_device" "minikube" {
       user        = "root"
       private_key = "${tls_private_key.ssh.private_key_pem}"
     }
+
     inline = [
       "chmod a+x /tmp/10-install-virtualbox.sh && chmod a+x /tmp/20-install-minikube.sh",
       "/tmp/10-install-virtualbox.sh | tee /var/log/provisioning-10-virtualbox.log",
       "/tmp/20-install-minikube.sh | tee /var/log/provisioning-20-minikube.log",
       "minikube start --kubernetes-version=v${var.kubernetes_version}",
+
       # Extract certs so they can be transfered back to client
       "mkdir -p /tmp/${var.dotminikube_path}",
+
       "minikube ip | tr -d \"\n\" > /tmp/client/local-ip.txt",
       "cp -r ~/.minikube/{ca.crt,client.crt,client.key} /tmp/${var.dotminikube_path}/",
     ]
@@ -124,8 +130,9 @@ ssh -i ${var.private_ssh_key_location} -o StrictHostKeyChecking=no -o ControlMas
   root@${packet_device.minikube.access_public_ipv4} >./tunnel.stdout.log 2>./tunnel.stderr.log
 EOF
   }
+
   provisioner "local-exec" {
-    when = "destroy"
+    when    = "destroy"
     command = "ssh -i ${var.private_ssh_key_location} -S tunnel-ctrl.socket -O exit root@${packet_device.minikube.access_public_ipv4}"
   }
 }

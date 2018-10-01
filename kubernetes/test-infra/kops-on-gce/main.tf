@@ -7,12 +7,12 @@ variable "zone_name" {
 }
 
 variable "bucket_prefix" {
-  type = "string"
+  type    = "string"
   default = "kops-tfacc"
 }
 
 variable "private_ssh_key_filename" {
-  type = "string"
+  type    = "string"
   default = "id_rsa"
 }
 
@@ -21,10 +21,10 @@ resource "random_id" "name" {
 }
 
 locals {
-  cluster_name = "k.${random_id.name.hex}.${var.zone_name}"
-  bucket_name = "${var.bucket_prefix}-${random_id.name.hex}"
+  cluster_name            = "k.${random_id.name.hex}.${var.zone_name}"
+  bucket_name             = "${var.bucket_prefix}-${random_id.name.hex}"
   public_ssh_key_location = "${path.module}/${var.private_ssh_key_filename}.pub"
-  tmp_creds_location = "${path.module}/google-creds.json"
+  tmp_creds_location      = "${path.module}/google-creds.json"
 }
 
 data "google_compute_zones" "available" {}
@@ -50,6 +50,7 @@ EOF
 
   provisioner "local-exec" {
     when = "destroy"
+
     command = <<EOF
 export TMP_CREDS_PATH=${local.tmp_creds_location}
 export CLUSTER_NAME=${local.cluster_name}
