@@ -1,13 +1,15 @@
 package kubernetes
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 
+	api "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+
 	"github.com/hashicorp/terraform/helper/schema"
 	//api "k8s.io/api/extensions/v1beta1"
-	cr "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
+
+	cr "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/kubectl/scheme"
@@ -122,34 +124,41 @@ func resourceKubernetesCustomResourceDefinition() *schema.Resource {
 }
 
 func resourceKubernetesCustomResourceDefinitionCreate(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetesProvider).conn
+	prov := meta.(*kubernetesProvider)
+	//conn := meta.(*kubernetesProvider).conn
+
+	conn, err := api.NewForConfig(prov.cfg)
 
 	metadata := expandMetadata(d.Get("metadata").([]interface{}))
 
 	crd := cr.CustomResourceDefinition{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "CustomResourceDefinition",
-			APIVersion: "apiextensions.k8s.io/v1beta1",
-		},
+		//TypeMeta: metav1.TypeMeta{
+		//	Kind:       "CustomResourceDefinition",
+		//	APIVersion: "apiextensions.k8s.io/v1beta1",
+		//},
 		ObjectMeta: metadata,
 		Spec:       expandCustomResourceDefinitionSpec(d.Get("spec").([]interface{})),
 	}
-	jCRD, _ := json.Marshal(crd)
+	//jCRD, _ := json.Marshal(crd)
 
 	log.Printf("[INFO] Creating new custom resource definition: %#v", crd)
-	//result := conn.RESTClient().Put().Namespace(metadata.Namespace).Body(&crd).Do()
-	out := &cr.CustomResourceDefinition{}
-	err := conn.RESTClient().Post().
-		Namespace(metadata.Namespace).
-		Resource("customresourcedefinition").
-		Name(metadata.Name).
-		Body(jCRD).
-		Do().
-		Into(out)
+
+	//out := &cr.CustomResourceDefinition{}
+
+	out, err := conn.ApiextensionsV1beta1().CustomResourceDefinitions().Create(&crd)
+
+	//out, err := conn.Resource(res).Create(unstr, metav1.GetOptions{}).
+	//	NamespaceIfScoped(metadata.Namespace, crd.Spec.Scope == "Namespaced").
+	//	Resource("customresourcedefinitions").
+	//	Prefix("apis", "apiextensions").
+	//	Name(metadata.Name).
+	//	Body(jCRD).
+	//	Do().
+	//	Into(out)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not create CRD %s: %s", crd.Name, err)
 	}
-	//out, _ := result.Raw()
+
 	log.Printf("[INFO] Submitted new custom resource definition: %#v", out)
 	d.SetId(buildId(metadata))
 
