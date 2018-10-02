@@ -111,6 +111,18 @@ func flattenCinderVolumeSource(in *v1.CinderVolumeSource) []interface{} {
 	return []interface{}{att}
 }
 
+func flattenCinderPersistentVolumeSource(in *v1.CinderPersistentVolumeSource) []interface{} {
+	att := make(map[string]interface{})
+	att["volume_id"] = in.VolumeID
+	if in.FSType != "" {
+		att["fs_type"] = in.FSType
+	}
+	if in.ReadOnly != false {
+		att["read_only"] = in.ReadOnly
+	}
+	return []interface{}{att}
+}
+
 func flattenFCVolumeSource(in *v1.FCVolumeSource) []interface{} {
 	att := make(map[string]interface{})
 	att["target_ww_ns"] = newStringSet(schema.HashString, in.TargetWWNs)
@@ -276,7 +288,7 @@ func flattenPersistentVolumeSource(in v1.PersistentVolumeSource) []interface{} {
 		att["iscsi"] = flattenISCSIPersistentVolumeSource(in.ISCSI)
 	}
 	if in.Cinder != nil {
-		att["cinder"] = flattenCinderVolumeSource(in.Cinder)
+		att["cinder"] = flattenCinderPersistentVolumeSource(in.Cinder)
 	}
 	if in.CephFS != nil {
 		att["ceph_fs"] = flattenCephFSPersistentVolumeSource(in.CephFS)
@@ -552,6 +564,23 @@ func expandCinderVolumeSource(l []interface{}) *v1.CinderVolumeSource {
 	return obj
 }
 
+func expandCinderPersistentVolumeSource(l []interface{}) *v1.CinderPersistentVolumeSource {
+	if len(l) == 0 || l[0] == nil {
+		return &v1.CinderPersistentVolumeSource{}
+	}
+	in := l[0].(map[string]interface{})
+	obj := &v1.CinderPersistentVolumeSource{
+		VolumeID: in["volume_id"].(string),
+	}
+	if v, ok := in["fs_type"].(string); ok {
+		obj.FSType = v
+	}
+	if v, ok := in["read_only"].(bool); ok {
+		obj.ReadOnly = v
+	}
+	return obj
+}
+
 func expandFCVolumeSource(l []interface{}) *v1.FCVolumeSource {
 	if len(l) == 0 || l[0] == nil {
 		return &v1.FCVolumeSource{}
@@ -766,7 +795,7 @@ func expandPersistentVolumeSource(l []interface{}) v1.PersistentVolumeSource {
 		obj.ISCSI = expandISCSIPersistentVolumeSource(v)
 	}
 	if v, ok := in["cinder"].([]interface{}); ok && len(v) > 0 {
-		obj.Cinder = expandCinderVolumeSource(v)
+		obj.Cinder = expandCinderPersistentVolumeSource(v)
 	}
 	if v, ok := in["ceph_fs"].([]interface{}); ok && len(v) > 0 {
 		obj.CephFS = expandCephFSPersistentVolumeSource(v)
