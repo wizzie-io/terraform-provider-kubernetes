@@ -87,14 +87,21 @@ func resourceGoogleServiceAccountKey() *schema.Resource {
 func resourceGoogleServiceAccountKeyCreate(d *schema.ResourceData, meta interface{}) error {
 	config := meta.(*Config)
 
-	serviceAccount := d.Get("service_account_id").(string)
+	// Get the project from the resource or fallback to the project
+	// in the provider configuration
+	project, err := getProject(d, config)
+	if err != nil {
+		return err
+	}
+
+	serviceAccountName := serviceAccountFQN(d.Get("service_account_id").(string), project)
 
 	r := &iam.CreateServiceAccountKeyRequest{
 		KeyAlgorithm:   d.Get("key_algorithm").(string),
 		PrivateKeyType: d.Get("private_key_type").(string),
 	}
 
-	sak, err := config.clientIAM.Projects.ServiceAccounts.Keys.Create(serviceAccount, r).Do()
+	sak, err := config.clientIAM.Projects.ServiceAccounts.Keys.Create(serviceAccountName, r).Do()
 	if err != nil {
 		return fmt.Errorf("Error creating service account key: %s", err)
 	}

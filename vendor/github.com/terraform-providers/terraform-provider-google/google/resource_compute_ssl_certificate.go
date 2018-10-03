@@ -15,6 +15,10 @@ func resourceComputeSslCertificate() *schema.Resource {
 		Read:   resourceComputeSslCertificateRead,
 		Delete: resourceComputeSslCertificateDelete,
 
+		Importer: &schema.ResourceImporter{
+			State: schema.ImportStatePassthrough,
+		},
+
 		Schema: map[string]*schema.Schema{
 			"certificate": &schema.Schema{
 				Type:      schema.TypeString,
@@ -35,6 +39,7 @@ func resourceComputeSslCertificate() *schema.Resource {
 			"name_prefix": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
+				Computed: true,
 				ForceNew: true,
 				ValidateFunc: func(v interface{}, k string) (ws []string, errors []error) {
 					// https://cloud.google.com/compute/docs/reference/latest/sslCertificates#resource
@@ -46,6 +51,8 @@ func resourceComputeSslCertificate() *schema.Resource {
 					}
 					return
 				},
+				Deprecated: "Use the random provider instead. See migration instructions at " +
+					"https://github.com/terraform-providers/terraform-provider-google/issues/1054#issuecomment-377390209",
 			},
 
 			"private_key": &schema.Schema{
@@ -69,6 +76,7 @@ func resourceComputeSslCertificate() *schema.Resource {
 			"project": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
+				Computed: true,
 				ForceNew: true,
 			},
 
@@ -141,6 +149,10 @@ func resourceComputeSslCertificateRead(d *schema.ResourceData, meta interface{})
 
 	d.Set("self_link", cert.SelfLink)
 	d.Set("certificate_id", strconv.FormatUint(cert.Id, 10))
+	d.Set("description", cert.Description)
+	d.Set("name", cert.Name)
+	d.Set("certificate", cert.Certificate)
+	d.Set("project", project)
 
 	return nil
 }

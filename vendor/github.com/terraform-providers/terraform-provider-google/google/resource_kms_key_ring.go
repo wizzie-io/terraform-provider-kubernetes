@@ -2,11 +2,12 @@ package google
 
 import (
 	"fmt"
-	"github.com/hashicorp/terraform/helper/schema"
-	"google.golang.org/api/cloudkms/v1"
 	"log"
 	"regexp"
 	"strings"
+
+	"github.com/hashicorp/terraform/helper/schema"
+	"google.golang.org/api/cloudkms/v1"
 )
 
 func resourceKmsKeyRing() *schema.Resource {
@@ -32,6 +33,7 @@ func resourceKmsKeyRing() *schema.Resource {
 			"project": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
+				Computed: true,
 				ForceNew: true,
 			},
 		},
@@ -78,13 +80,18 @@ func resourceKmsKeyRingCreate(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[DEBUG] Created KeyRing %s", keyRing.Name)
 
-	d.SetId(keyRingId.terraformId())
+	d.SetId(keyRingId.keyRingId())
 
 	return resourceKmsKeyRingRead(d, meta)
 }
 
 func resourceKmsKeyRingRead(d *schema.ResourceData, meta interface{}) error {
 	config := meta.(*Config)
+
+	project, err := getProject(d, config)
+	if err != nil {
+		return err
+	}
 
 	keyRingId, err := parseKmsKeyRingId(d.Id(), config)
 	if err != nil {
@@ -98,6 +105,8 @@ func resourceKmsKeyRingRead(d *schema.ResourceData, meta interface{}) error {
 	if err != nil {
 		return fmt.Errorf("Error reading KeyRing: %s", err)
 	}
+
+	d.Set("project", project)
 
 	return nil
 }
@@ -127,6 +136,7 @@ func parseKmsKeyRingId(id string, config *Config) (*kmsKeyRingId, error) {
 
 	keyRingIdRegex := regexp.MustCompile("^([a-z0-9-]+)/([a-z0-9-])+/([a-zA-Z0-9_-]{1,63})$")
 	keyRingIdWithoutProjectRegex := regexp.MustCompile("^([a-z0-9-])+/([a-zA-Z0-9_-]{1,63})$")
+	keyRingRelativeLinkRegex := regexp.MustCompile("^projects/([a-z0-9-]+)/locations/([a-z0-9-]+)/keyRings/([a-zA-Z0-9_-]{1,63})$")
 
 	if keyRingIdRegex.MatchString(id) {
 		return &kmsKeyRingId{
@@ -148,6 +158,13 @@ func parseKmsKeyRingId(id string, config *Config) (*kmsKeyRingId, error) {
 		}, nil
 	}
 
+	if parts := keyRingRelativeLinkRegex.FindStringSubmatch(id); parts != nil {
+		return &kmsKeyRingId{
+			Project:  parts[1],
+			Location: parts[2],
+			Name:     parts[3],
+		}, nil
+	}
 	return nil, fmt.Errorf("Invalid KeyRing id format, expecting `{projectId}/{locationId}/{keyRingName}` or `{locationId}/{keyRingName}.`")
 }
 
@@ -166,7 +183,7 @@ func resourceKmsKeyRingImportState(d *schema.ResourceData, meta interface{}) ([]
 		d.Set("project", keyRingId.Project)
 	}
 
-	d.SetId(keyRingId.terraformId())
+	d.SetId(keyRingId.keyRingId())
 
 	return []*schema.ResourceData{d}, nil
 }

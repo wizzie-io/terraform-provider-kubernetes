@@ -3,6 +3,7 @@ package google
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/hashicorp/terraform/helper/schema"
 	"google.golang.org/api/compute/v1"
@@ -14,7 +15,6 @@ func resourceComputeSnapshot() *schema.Resource {
 		Create: resourceComputeSnapshotCreate,
 		Read:   resourceComputeSnapshotRead,
 		Delete: resourceComputeSnapshotDelete,
-		Exists: resourceComputeSnapshotExists,
 		Update: resourceComputeSnapshotUpdate,
 
 		Schema: map[string]*schema.Schema{
@@ -26,7 +26,8 @@ func resourceComputeSnapshot() *schema.Resource {
 
 			"zone": &schema.Schema{
 				Type:     schema.TypeString,
-				Required: true,
+				Optional: true,
+				Computed: true,
 				ForceNew: true,
 			},
 
@@ -68,6 +69,7 @@ func resourceComputeSnapshot() *schema.Resource {
 			"project": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
+				Computed: true,
 				ForceNew: true,
 			},
 
@@ -87,6 +89,11 @@ func resourceComputeSnapshot() *schema.Resource {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+		},
+		Timeouts: &schema.ResourceTimeout{
+			Create: schema.DefaultTimeout(4 * time.Minute),
+			Update: schema.DefaultTimeout(4 * time.Minute),
+			Delete: schema.DefaultTimeout(4 * time.Minute),
 		},
 	}
 }
@@ -116,8 +123,13 @@ func resourceComputeSnapshotCreate(d *schema.ResourceData, meta interface{}) err
 		snapshot.SourceDiskEncryptionKey.RawKey = v.(string)
 	}
 
+	zone, err := getZone(d, config)
+	if err != nil {
+		return err
+	}
+
 	op, err := config.clientCompute.Disks.CreateSnapshot(
-		project, d.Get("zone").(string), source_disk, snapshot).Do()
+		project, zone, source_disk, snapshot).Do()
 	if err != nil {
 		return fmt.Errorf("Error creating snapshot: %s", err)
 	}
@@ -125,7 +137,8 @@ func resourceComputeSnapshotCreate(d *schema.ResourceData, meta interface{}) err
 	// It probably maybe worked, so store the ID now
 	d.SetId(snapshot.Name)
 
-	err = computeOperationWait(config.clientCompute, op, project, "Creating Snapshot")
+	timeout := int(d.Timeout(schema.TimeoutCreate).Minutes())
+	err = computeOperationWaitTime(config.clientCompute, op, project, "Creating Snapshot", timeout)
 	if err != nil {
 		return err
 	}
@@ -138,7 +151,7 @@ func resourceComputeSnapshotCreate(d *schema.ResourceData, meta interface{}) err
 			return fmt.Errorf("Eror when reading snapshot for label update: %s", err)
 		}
 
-		err = updateLabels(config.clientCompute, project, d.Id(), labels, apiSnapshot.LabelFingerprint)
+		err = updateLabels(config.clientCompute, project, d.Id(), labels, apiSnapshot.LabelFingerprint, timeout)
 		if err != nil {
 			return err
 		}
@@ -150,6 +163,11 @@ func resourceComputeSnapshotRead(d *schema.ResourceData, meta interface{}) error
 	config := meta.(*Config)
 
 	project, err := getProject(d, config)
+	if err != nil {
+		return err
+	}
+
+	zone, err := getZone(d, config)
 	if err != nil {
 		return err
 	}
@@ -174,6 +192,8 @@ func resourceComputeSnapshotRead(d *schema.ResourceData, meta interface{}) error
 
 	d.Set("labels", snapshot.Labels)
 	d.Set("label_fingerprint", snapshot.LabelFingerprint)
+	d.Set("project", project)
+	d.Set("zone", zone)
 
 	return nil
 }
@@ -189,7 +209,7 @@ func resourceComputeSnapshotUpdate(d *schema.ResourceData, meta interface{}) err
 	d.Partial(true)
 
 	if d.HasChange("labels") {
-		err = updateLabels(config.clientCompute, project, d.Id(), expandLabels(d), d.Get("label_fingerprint").(string))
+		err = updateLabels(config.clientCompute, project, d.Id(), expandLabels(d), d.Get("label_fingerprint").(string), int(d.Timeout(schema.TimeoutDelete).Minutes()))
 		if err != nil {
 			return err
 		}
@@ -223,7 +243,7 @@ func resourceComputeSnapshotDelete(d *schema.ResourceData, meta interface{}) err
 		return fmt.Errorf("Error deleting snapshot: %s", err)
 	}
 
-	err = computeOperationWait(config.clientCompute, op, project, "Deleting Snapshot")
+	err = computeOperationWaitTime(config.clientCompute, op, project, "Deleting Snapshot", int(d.Timeout(schema.TimeoutDelete).Minutes()))
 	if err != nil {
 		return err
 	}
@@ -232,30 +252,7 @@ func resourceComputeSnapshotDelete(d *schema.ResourceData, meta interface{}) err
 	return nil
 }
 
-func resourceComputeSnapshotExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	config := meta.(*Config)
-
-	project, err := getProject(d, config)
-	if err != nil {
-		return false, err
-	}
-
-	_, err = config.clientCompute.Snapshots.Get(
-		project, d.Id()).Do()
-	if err != nil {
-		if gerr, ok := err.(*googleapi.Error); ok && gerr.Code == 404 {
-			log.Printf("[WARN] Removing Snapshot %q because it's gone", d.Get("name").(string))
-			// The resource doesn't exist anymore
-			d.SetId("")
-
-			return false, err
-		}
-		return true, err
-	}
-	return true, nil
-}
-
-func updateLabels(client *compute.Service, project string, resourceId string, labels map[string]string, labelFingerprint string) error {
+func updateLabels(client *compute.Service, project string, resourceId string, labels map[string]string, labelFingerprint string, timeout int) error {
 	setLabelsReq := compute.GlobalSetLabelsRequest{
 		Labels:           labels,
 		LabelFingerprint: labelFingerprint,
@@ -265,5 +262,5 @@ func updateLabels(client *compute.Service, project string, resourceId string, la
 		return err
 	}
 
-	return computeOperationWait(client, op, project, "Setting labels on snapshot")
+	return computeOperationWaitTime(client, op, project, "Setting labels on snapshot", timeout)
 }
