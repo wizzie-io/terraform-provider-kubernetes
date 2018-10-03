@@ -4,15 +4,12 @@ import (
 	"fmt"
 	"log"
 
-	api "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
-
-	"github.com/hashicorp/terraform/helper/schema"
-	//api "k8s.io/api/extensions/v1beta1"
-
 	cr "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	api "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/kubectl/scheme"
+
+	"github.com/hashicorp/terraform/helper/schema"
 )
 
 func resourceKubernetesCustomResourceDefinition() *schema.Resource {
@@ -27,7 +24,7 @@ func resourceKubernetesCustomResourceDefinition() *schema.Resource {
 		},
 
 		Schema: map[string]*schema.Schema{
-			"metadata": namespacedMetadataSchema("custom resource definition", true),
+			"metadata": metadataSchema("custom resource definition", false),
 			"spec": {
 				Type:        schema.TypeList,
 				Description: "Spec describes how the user wants the resources to appear",
@@ -125,36 +122,17 @@ func resourceKubernetesCustomResourceDefinition() *schema.Resource {
 
 func resourceKubernetesCustomResourceDefinitionCreate(d *schema.ResourceData, meta interface{}) error {
 	prov := meta.(*kubernetesProvider)
-	//conn := meta.(*kubernetesProvider).conn
-
 	conn, err := api.NewForConfig(prov.cfg)
 
 	metadata := expandMetadata(d.Get("metadata").([]interface{}))
 
 	crd := cr.CustomResourceDefinition{
-		//TypeMeta: metav1.TypeMeta{
-		//	Kind:       "CustomResourceDefinition",
-		//	APIVersion: "apiextensions.k8s.io/v1beta1",
-		//},
 		ObjectMeta: metadata,
 		Spec:       expandCustomResourceDefinitionSpec(d.Get("spec").([]interface{})),
 	}
-	//jCRD, _ := json.Marshal(crd)
 
 	log.Printf("[INFO] Creating new custom resource definition: %#v", crd)
-
-	//out := &cr.CustomResourceDefinition{}
-
 	out, err := conn.ApiextensionsV1beta1().CustomResourceDefinitions().Create(&crd)
-
-	//out, err := conn.Resource(res).Create(unstr, metav1.GetOptions{}).
-	//	NamespaceIfScoped(metadata.Namespace, crd.Spec.Scope == "Namespaced").
-	//	Resource("customresourcedefinitions").
-	//	Prefix("apis", "apiextensions").
-	//	Name(metadata.Name).
-	//	Body(jCRD).
-	//	Do().
-	//	Into(out)
 	if err != nil {
 		return fmt.Errorf("could not create CRD %s: %s", crd.Name, err)
 	}
@@ -166,36 +144,31 @@ func resourceKubernetesCustomResourceDefinitionCreate(d *schema.ResourceData, me
 }
 
 func resourceKubernetesCustomResourceDefinitionRead(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetesProvider).conn
+	prov := meta.(*kubernetesProvider)
+	conn, err := api.NewForConfig(prov.cfg)
 
-	namespace, name, err := idParts(d.Id())
+	_, name, err := idParts(d.Id())
 	if err != nil {
 		return err
 	}
 	log.Printf("[INFO] Reading custom resource definition %s", name)
 	crd := &cr.CustomResourceDefinition{}
-	err = conn.RESTClient().Get().
-		Namespace(namespace).
-		Resource("customresourcedefinitions").
-		Name(name).
-		VersionedParams(&metav1.GetOptions{}, scheme.ParameterCodec).
-		Do().
-		Into(crd)
-	//res := conn.RESTClient().Get().Namespace(namespace).Name(fmt.Sprintf("customresourcedefinition/%s", name)).Do()
+	crd, err = conn.ApiextensionsV1beta1().CustomResourceDefinitions().Get(name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
-	//err = res.Into(crd)
-	//if err != nil {
-	//	log.Printf("[DEBUG] Received error: %#v", err)
-	//	return err
-	//}
+
 	log.Printf("[INFO] Received custom resource definition: %#v", crd)
 	err = d.Set("metadata", flattenMetadata(crd.ObjectMeta, d))
 	if err != nil {
 		return err
 	}
-	d.Set("spec", crd.Spec)
+
+	spec, err := flattenCustomResourceDefinitionSpec(crd.Spec)
+	if err != nil {
+		return err
+	}
+	d.Set("spec", spec)
 
 	return nil
 }
@@ -220,15 +193,16 @@ func resourceKubernetesCustomResourceDefinitionUpdate(d *schema.ResourceData, me
 }
 
 func resourceKubernetesCustomResourceDefinitionDelete(d *schema.ResourceData, meta interface{}) error {
-	conn := meta.(*kubernetesProvider).conn
+	prov := meta.(*kubernetesProvider)
+	conn, err := api.NewForConfig(prov.cfg)
 
-	namespace, name, err := idParts(d.Id())
+	_, name, err := idParts(d.Id())
 	if err != nil {
 		return err
 	}
-	res := conn.RESTClient().Delete().Namespace(namespace).Name(fmt.Sprintf("customresourcedefinition/%s", name)).Do()
-	if res.Error() != nil {
-		return res.Error()
+	err = conn.ApiextensionsV1beta1().CustomResourceDefinitions().Delete(name, &metav1.DeleteOptions{})
+	if err != nil {
+		return err
 	}
 
 	log.Printf("[INFO] Custom Resource Definition %s deleted", name)
@@ -238,23 +212,23 @@ func resourceKubernetesCustomResourceDefinitionDelete(d *schema.ResourceData, me
 }
 
 func resourceKubernetesCustomResourceDefinitionExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	conn := meta.(*kubernetesProvider).conn
+	prov := meta.(*kubernetesProvider)
+	conn, err := api.NewForConfig(prov.cfg)
 
-	namespace, name, err := idParts(d.Id())
+	_, name, err := idParts(d.Id())
 	if err != nil {
 		return false, err
 	}
-
 	log.Printf("[INFO] Checking custom resource definition %s", name)
-	res := conn.RESTClient().Get().Namespace(namespace).Name(fmt.Sprintf("customresourcedefinition/%s", name)).Do()
-	if res.Error() != nil {
+	_, err = conn.ApiextensionsV1beta1().CustomResourceDefinitions().Get(name, metav1.GetOptions{})
+	if err != nil {
 		if statusErr, ok := err.(*errors.StatusError); ok && statusErr.ErrStatus.Code == 404 {
 			return false, nil
 		}
 		log.Printf("[DEBUG] Received error: %#v", err)
 	}
 
-	return true, err
+	return true, nil
 }
 
 func expandCustomResourceDefinitionSpec(in []interface{}) cr.CustomResourceDefinitionSpec {
@@ -270,15 +244,12 @@ func expandCustomResourceDefinitionSpec(in []interface{}) cr.CustomResourceDefin
 	if v, ok := cfgCfg["name"]; ok {
 		crd.Names = expandCustomResourceDefinitionName(v.([]interface{}))
 	}
-	//if v, ok := cfgCfg["resource_names"]; ok {
-	//	crd.ResourceNames = expandStringSlice(v.([]interface{}))
-	//}
-	//if v, ok := cfgCfg["resources"]; ok {
-	//	crd.Resources = expandStringSlice(v.([]interface{}))
-	//}
-	//if v, ok := cfgCfg["versions"]; ok {
-	//	crd.Versions = expandStringSlice(v.([]interface{}))
-	//}
+	if v, ok := cfgCfg["scope"]; ok {
+		crd.Scope = cr.ResourceScope(v.(string))
+	}
+	if v, ok := cfgCfg["version"]; ok {
+		crd.Version = v.(string)
+	}
 
 	return crd
 }
@@ -301,4 +272,31 @@ func expandCustomResourceDefinitionName(in []interface{}) cr.CustomResourceDefin
 	}
 
 	return n
+}
+
+func flattenCustomResourceDefinitionSpec(in cr.CustomResourceDefinitionSpec) ([]interface{}, error) {
+	att := make(map[string]interface{})
+
+	att["group"] = in.Group
+	att["scope"] = in.Scope
+	att["version"] = in.Version
+
+	names, err := flattenCustomResourceDefinitionNames(in.Names)
+	if err != nil {
+		return nil, err
+	}
+	att["name"] = names
+
+	return []interface{}{att}, nil
+}
+
+func flattenCustomResourceDefinitionNames(in cr.CustomResourceDefinitionNames) ([]interface{}, error) {
+	att := make(map[string]interface{})
+
+	att["singular"] = in.Singular
+	att["plural"] = in.Plural
+	att["kind"] = in.Kind
+	att["list_kind"] = in.ListKind
+
+	return []interface{}{att}, nil
 }
