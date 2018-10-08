@@ -48,9 +48,16 @@ Alternatively, use the golang docker to build the provider
 
 1. clone this repo: https://github.com/sl1pm4t/terraform-provider-kubernetes.git
 2. run: 
-```docker run --rm -v <location of cloned repo above>:/go/src/github.com/sl1pm4t/terraform-provider-kubernetes/ -w /go/src/github.com/sl1pm4t/terraform-provider-kubernetes/ -e GOOS=windows -e GOARCH=386 golang go build -v
 ```
-be sure to use the appropriate OS and architecture for your environment (see official docker for golang)
+cd <path to cloned repo>
+docker run --rm -v `pwd`:/go/src/github.com/sl1pm4t/terraform-provider-kubernetes/ \
+  -w /go/src/github.com/sl1pm4t/terraform-provider-kubernetes/ \
+  -e GOOS=windows -e GOARCH=386 golang \
+  go build -v
+```
+
+> be sure to use the appropriate OS and architecture for your environment (see official docker for golang)
+
 3. From the root director of your terraform project, run
 ```
 terraform init --plugin-dir=<location of the plugin executable built in step 2>`
