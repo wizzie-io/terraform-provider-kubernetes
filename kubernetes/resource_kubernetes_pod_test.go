@@ -497,6 +497,36 @@ func TestAccKubernetesPod_with_Toleration(t *testing.T) {
 	})
 }
 
+func TestAccKubernetesPod_with_DNS_config(t *testing.T) {
+	var conf api.Pod
+
+	podName := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
+	imageName := "nginx:1.7.9"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckKubernetesPodDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKubernetesPodDNSConfig(podName, imageName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesPodExists("kubernetes_pod.test", &conf),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.container.0.image", imageName),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.dns_config.#", "1"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.dns_config.0.nameservers.#", "2"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.dns_config.0.nameservers.0", "8.8.8.8"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.dns_config.0.nameservers.1", "8.8.4.4"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.dns_config.0.options.%", "1"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.dns_config.0.options.foo", "blah"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.dns_config.0.searches.#", "1"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.dns_config.0.searches.0", "domain.com"),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckKubernetesPodDestroy(s *terraform.State) error {
 	conn := testAccProvider.Meta().(*kubernetesProvider).conn
 
@@ -1081,6 +1111,30 @@ resource "kubernetes_pod" "test" {
       operator           = "Exists"
       toleration_seconds = 30
       effect             = "NoExecute"
+	}
+  }
+}
+`, podName, imageName)
+}
+
+func testAccKubernetesPodDNSConfig(podName, imageName string) string {
+	return fmt.Sprintf(`
+resource "kubernetes_pod" "test" {
+  metadata {
+    name = "%s"
+  }
+
+  spec {
+    container {
+      image = "%s"
+      name  = "containername"
+    }
+    dns_config {
+      nameservers = ["8.8.8.8", "8.8.4.4"]
+      options {
+        foo = "blah"
+      }
+      searches = ["domain.com"]
 	}
   }
 }

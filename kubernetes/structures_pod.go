@@ -22,6 +22,8 @@ func flattenPodSpec(in v1.PodSpec) ([]interface{}, error) {
 	}
 	att["container"] = containers
 
+	att["dns_config"] = flattenDNSConfig(in.DNSConfig)
+
 	att["dns_policy"] = in.DNSPolicy
 
 	att["host_ipc"] = in.HostIPC
@@ -84,6 +86,22 @@ func flattenPodSpec(in v1.PodSpec) ([]interface{}, error) {
 		att["volume"] = v
 	}
 	return []interface{}{att}, nil
+}
+
+func flattenDNSConfig(in *v1.PodDNSConfig) interface{} {
+	att := make(map[string]interface{})
+
+	att["nameservers"] = in.Nameservers
+
+	optMap := make(map[string]string, len(in.Options))
+	for _, opt := range in.Options {
+		optMap[opt.Name] = *opt.Value
+	}
+	att["options"] = optMap
+
+	att["searches"] = in.Searches
+
+	return []interface{}{att}
 }
 
 func flattenPodTemplateSpec(in v1.PodTemplateSpec, d *schema.ResourceData) ([]interface{}, error) {
@@ -402,6 +420,10 @@ func expandPodSpec(p []interface{}) (v1.PodSpec, error) {
 		obj.Containers = cs
 	}
 
+	if v, ok := in["dns_config"].([]interface{}); ok {
+		obj.DNSConfig = expandDNSConfig(v)
+	}
+
 	if v, ok := in["dns_policy"].(string); ok {
 		obj.DNSPolicy = v1.DNSPolicy(v)
 	}
@@ -500,6 +522,35 @@ func expandPodSpec(p []interface{}) (v1.PodSpec, error) {
 		obj.Volumes = cs
 	}
 	return obj, nil
+}
+
+func expandDNSConfig(l []interface{}) *v1.PodDNSConfig {
+	if len(l) == 0 || l[0] == nil {
+		return &v1.PodDNSConfig{}
+	}
+
+	in := l[0].(map[string]interface{})
+	obj := &v1.PodDNSConfig{}
+
+	if v, ok := in["nameservers"].([]interface{}); ok {
+		obj.Nameservers = expandStringSlice(v)
+	}
+
+	if v, ok := in["options"]; ok {
+		optMap := v.(map[string]interface{})
+		for optKey, optVal := range optMap {
+			obj.Options = append(obj.Options, v1.PodDNSConfigOption{
+				Name:  optKey,
+				Value: ptrToString(optVal.(string)),
+			})
+		}
+	}
+
+	if v, ok := in["searches"].([]interface{}); ok {
+		obj.Searches = expandStringSlice(v)
+	}
+
+	return obj
 }
 
 func expandPodSecurityContext(l []interface{}) *v1.PodSecurityContext {

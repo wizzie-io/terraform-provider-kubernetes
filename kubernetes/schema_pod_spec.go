@@ -36,6 +36,34 @@ func podSpecFields(isUpdatable bool) map[string]*schema.Schema {
 				Schema: containerFields(isUpdatable),
 			},
 		},
+		"dns_config": {
+			Type:        schema.TypeList,
+			Optional:    true,
+			MaxItems:    1,
+			Description: "PodDNSConfig defines the DNS parameters of a pod in addition to those generated from DNSPolicy.",
+			Elem: &schema.Resource{
+				Schema: map[string]*schema.Schema{
+					"nameservers": {
+						Type:        schema.TypeList,
+						Description: "A list of DNS name server IP addresses. This will be appended to the base nameservers generated from DNSPolicy. Duplicated nameservers will be removed.",
+						Elem:        &schema.Schema{Type: schema.TypeString},
+						Optional:    true,
+					},
+					"options": {
+						Type:        schema.TypeMap,
+						Description: "A list of DNS resolver options. This will be merged with the base options generated from DNSPolicy. Duplicated entries will be removed. Resolution options given in Options will override those that appear in the base DNSPolicy.",
+						Elem:        &schema.Schema{Type: schema.TypeString},
+						Optional:    true,
+					},
+					"searches": {
+						Type:        schema.TypeList,
+						Description: "A list of DNS search domains for host-name lookup. This will be appended to the base search paths generated from DNSPolicy. Duplicated search paths will be removed.",
+						Elem:        &schema.Schema{Type: schema.TypeString},
+						Optional:    true,
+					},
+				},
+			},
+		},
 		"dns_policy": {
 			Type:        schema.TypeString,
 			Optional:    true,
