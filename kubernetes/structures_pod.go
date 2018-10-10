@@ -89,19 +89,20 @@ func flattenPodSpec(in v1.PodSpec) ([]interface{}, error) {
 }
 
 func flattenDNSConfig(in *v1.PodDNSConfig) interface{} {
-	att := make(map[string]interface{})
+	if in != nil {
+		att := make(map[string]interface{})
+		att["nameservers"] = in.Nameservers
 
-	att["nameservers"] = in.Nameservers
+		optMap := make(map[string]string, len(in.Options))
+		for _, opt := range in.Options {
+			optMap[opt.Name] = *opt.Value
+		}
+		att["options"] = optMap
 
-	optMap := make(map[string]string, len(in.Options))
-	for _, opt := range in.Options {
-		optMap[opt.Name] = *opt.Value
+		att["searches"] = in.Searches
+		return []interface{}{att}
 	}
-	att["options"] = optMap
-
-	att["searches"] = in.Searches
-
-	return []interface{}{att}
+	return nil
 }
 
 func flattenPodTemplateSpec(in v1.PodTemplateSpec, d *schema.ResourceData) ([]interface{}, error) {
@@ -526,7 +527,7 @@ func expandPodSpec(p []interface{}) (v1.PodSpec, error) {
 
 func expandDNSConfig(l []interface{}) *v1.PodDNSConfig {
 	if len(l) == 0 || l[0] == nil {
-		return &v1.PodDNSConfig{}
+		return nil
 	}
 
 	in := l[0].(map[string]interface{})
