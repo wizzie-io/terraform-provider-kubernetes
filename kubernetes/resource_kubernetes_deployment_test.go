@@ -234,6 +234,66 @@ func TestAccKubernetesDeployment_noTopLevelLabels(t *testing.T) {
 	})
 }
 
+func TestAccKubernetesDeployment_strategy(t *testing.T) {
+	t.Parallel()
+
+	var conf appsv1.Deployment
+	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:      func() { testAccPreCheck(t) },
+		IDRefreshName: "kubernetes_deployment.test",
+		Providers:     testAccProviders,
+		CheckDestroy:  testAccCheckKubernetesDeploymentDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKubernetesDeploymentWithStrategy(name, "Recreate"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesDeploymentExists("kubernetes_deployment.test", &conf),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.strategy.0.type", "Recreate"),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.strategy.0.rolling_update.#", "0"),
+				),
+			},
+			{
+				Config: testAccKubernetesDeploymentWithStrategy(name, "RollingUpdate"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesDeploymentExists("kubernetes_deployment.test", &conf),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.strategy.0.type", "RollingUpdate"),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.strategy.0.rolling_update.#", "1"),
+				),
+			},
+			{
+				Config: testAccKubernetesDeploymentWithStrategy(name, "Recreate"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesDeploymentExists("kubernetes_deployment.test", &conf),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.strategy.0.type", "Recreate"),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.strategy.0.rolling_update.#", "0"),
+				),
+			},
+			{
+				Config: testAccKubernetesDeploymentWithRollingUpdateStrategy(name),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesDeploymentExists("kubernetes_deployment.test", &conf),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.strategy.0.type", "RollingUpdate"),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.strategy.0.rolling_update.#", "1"),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.strategy.0.rolling_update.0.max_surge", "50%"),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.strategy.0.rolling_update.0.max_surge", "50%"),
+				),
+			},
+			{
+				Config: testAccKubernetesDeploymentWithRollingUpdateStrategy2(name),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesDeploymentExists("kubernetes_deployment.test", &conf),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.strategy.0.type", "RollingUpdate"),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.strategy.0.rolling_update.#", "1"),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.strategy.0.rolling_update.0.max_surge", "25%"),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.strategy.0.rolling_update.0.max_surge", "25%"),
+				),
+			},
+		},
+	})
+}
+
 func pause() resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		time.Sleep(1 * time.Minute)
@@ -553,4 +613,114 @@ resource "kubernetes_deployment" "test" {
   }
 }
 `, depName, imageName)
+}
+
+func testAccKubernetesDeploymentWithStrategy(depName, strategy string) string {
+	return fmt.Sprintf(`
+resource "kubernetes_deployment" "test" {
+  metadata {
+    name = "%s"
+  }
+
+  spec {
+    selector {
+      foo = "bar"
+    }
+
+    strategy {
+      type = "%s"
+    }
+
+    template {
+      metadata {
+        labels {
+          foo = "bar"
+        }
+      }
+
+      spec {
+        container {
+          image = "alpine"
+          name  = "containername"
+        }
+      }
+    }
+  }
+}
+`, depName, strategy)
+}
+
+func testAccKubernetesDeploymentWithRollingUpdateStrategy(depName string) string {
+	return fmt.Sprintf(`
+resource "kubernetes_deployment" "test" {
+  metadata {
+    name = "%s"
+  }
+
+  spec {
+    selector {
+      foo = "bar"
+    }
+
+    strategy {
+      type = "RollingUpdate"
+      rolling_update {
+        max_surge       = "50%%"
+        max_unavailable = "50%%"
+      }
+    }
+
+    template {
+      metadata {
+        labels {
+          foo = "bar"
+        }
+      }
+
+      spec {
+        container {
+          image = "alpine"
+          name  = "containername"
+        }
+      }
+    }
+  }
+}
+`, depName)
+}
+
+func testAccKubernetesDeploymentWithRollingUpdateStrategy2(depName string) string {
+	return fmt.Sprintf(`
+resource "kubernetes_deployment" "test" {
+  metadata {
+    name = "%s"
+  }
+
+  spec {
+    selector {
+      foo = "bar"
+    }
+
+    strategy {
+      type = "RollingUpdate"
+      rolling_update {}
+    }
+
+    template {
+      metadata {
+        labels {
+          foo = "bar"
+        }
+      }
+
+      spec {
+        container {
+          image = "alpine"
+          name  = "containername"
+        }
+      }
+    }
+  }
+}
+`, depName)
 }

@@ -99,12 +99,12 @@ func (kp *kubernetesProvider) serverSupportsResourceAPIVersion(rname string, gro
 func Convert(item, out interface{}) error {
 	bytes, err := json.Marshal(item)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to convert API object - Marshal failed: %s", err)
 	}
 
 	err = json.Unmarshal(bytes, out)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to convert API object - Unmarshal failed: %s", err)
 	}
 
 	return nil

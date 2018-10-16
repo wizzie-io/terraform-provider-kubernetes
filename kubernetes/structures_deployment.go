@@ -80,10 +80,12 @@ func expandDeploymentSpec(deployment []interface{}) (appsv1.DeploymentSpec, erro
 
 	obj.MinReadySeconds = int32(in["min_ready_seconds"].(int))
 	obj.Paused = in["paused"].(bool)
+	obj.Replicas = ptrToInt32(int32(in["replicas"].(int)))
+	obj.Strategy = expandDeploymentStrategy(in["strategy"].([]interface{}))
+
 	if in["progress_deadline_seconds"].(int) > 0 {
 		obj.ProgressDeadlineSeconds = ptrToInt32(int32(in["progress_deadline_seconds"].(int)))
 	}
-	obj.Replicas = ptrToInt32(int32(in["replicas"].(int)))
 
 	if in["revision_history_limit"] != nil {
 		obj.RevisionHistoryLimit = ptrToInt32(int32(in["revision_history_limit"].(int)))
@@ -92,7 +94,6 @@ func expandDeploymentSpec(deployment []interface{}) (appsv1.DeploymentSpec, erro
 	obj.Selector = &metav1.LabelSelector{
 		MatchLabels: expandStringMap(in["selector"].(map[string]interface{})),
 	}
-	obj.Strategy = expandDeploymentStrategy(in["strategy"].([]interface{}))
 
 	for _, v := range in["template"].([]interface{}) {
 		template := v.(map[string]interface{})
@@ -116,7 +117,7 @@ func expandDeploymentStrategy(p []interface{}) appsv1.DeploymentStrategy {
 	if v, ok := in["type"]; ok {
 		obj.Type = appsv1.DeploymentStrategyType(v.(string))
 	}
-	if v, ok := in["rolling_update"]; ok {
+	if v, ok := in["rolling_update"]; ok && obj.Type == appsv1.RollingUpdateDeploymentStrategyType {
 		obj.RollingUpdate = expandRollingUpdateDeployment(v.([]interface{}))
 	}
 	return obj
@@ -125,7 +126,7 @@ func expandDeploymentStrategy(p []interface{}) appsv1.DeploymentStrategy {
 func expandRollingUpdateDeployment(p []interface{}) *appsv1.RollingUpdateDeployment {
 	obj := appsv1.RollingUpdateDeployment{}
 	if len(p) == 0 || p[0] == nil {
-		return &obj
+		return nil
 	}
 	in := p[0].(map[string]interface{})
 
