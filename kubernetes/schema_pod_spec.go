@@ -22,6 +22,15 @@ func podTemplateSpecFields(isUpdatable bool) map[string]*schema.Schema {
 
 func podSpecFields(isUpdatable bool) map[string]*schema.Schema {
 	s := map[string]*schema.Schema{
+		"affinity": {
+			Type:        schema.TypeList,
+			Optional:    true,
+			MaxItems:    1,
+			Description: "Optional pod scheduling constraints.",
+			Elem: &schema.Resource{
+				Schema: affinityFields(),
+			},
+		},
 		"active_deadline_seconds": {
 			Type:         schema.TypeInt,
 			Optional:     true,
