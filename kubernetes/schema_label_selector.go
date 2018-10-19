@@ -36,7 +36,6 @@ func labelSelectorFields() map[string]*schema.Schema {
 			Type:        schema.TypeMap,
 			Description: "A map of {key,value} pairs. A single {key,value} in the matchLabels map is equivalent to an element of `match_expressions`, whose key field is \"key\", the operator is \"In\", and the values array contains only \"value\". The requirements are ANDed.",
 			Optional:    true,
-			ForceNew:    true,
 		},
 	}
 }
