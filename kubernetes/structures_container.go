@@ -242,7 +242,9 @@ func flattenConfigMapEnvSource(in *v1.ConfigMapEnvSource) []interface{} {
 		att["name"] = in.Name
 	}
 
-	att["optional"] = *in.Optional
+	if in.Optional != nil {
+		att["optional"] = *in.Optional
+	}
 
 	return []interface{}{att}
 }
@@ -254,7 +256,9 @@ func flattenSecretEnvSource(in *v1.SecretEnvSource) []interface{} {
 		att["name"] = in.Name
 	}
 
-	att["optional"] = *in.Optional
+	if in.Optional != nil {
+		att["optional"] = *in.Optional
+	}
 
 	return []interface{}{att}
 }
