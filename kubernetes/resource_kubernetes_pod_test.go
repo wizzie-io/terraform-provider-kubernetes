@@ -408,6 +408,7 @@ func TestAccKubernetesPod_with_empty_dir_volume(t *testing.T) {
 					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.container.0.volume_mount.0.mount_path", "/cache"),
 					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.container.0.volume_mount.0.name", "cache-volume"),
 					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.volume.0.empty_dir.0.medium", "Memory"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.volume.0.empty_dir.0.size_limit", "1Gi"),
 				),
 			},
 		},
@@ -1044,6 +1045,7 @@ resource "kubernetes_pod" "test" {
     volume {
       name = "cache-volume"
       empty_dir = {
+        size_limit = "1Gi"
         medium = "Memory"
       }
     }

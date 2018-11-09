@@ -381,6 +381,7 @@ func TestAccKubernetesReplicationController_with_empty_dir_volume(t *testing.T) 
 					resource.TestCheckResourceAttr("kubernetes_replication_controller.test", "spec.0.template.0.container.0.volume_mount.0.mount_path", "/cache"),
 					resource.TestCheckResourceAttr("kubernetes_replication_controller.test", "spec.0.template.0.container.0.volume_mount.0.name", "cache-volume"),
 					resource.TestCheckResourceAttr("kubernetes_replication_controller.test", "spec.0.template.0.volume.0.empty_dir.0.medium", "Memory"),
+					resource.TestCheckResourceAttr("kubernetes_replication_controller.test", "spec.0.template.0.volume.0.empty_dir.0.size_limit", "1Gi"),
 				),
 			},
 		},
@@ -842,6 +843,7 @@ resource "kubernetes_replication_controller" "test" {
         name = "cache-volume"
         empty_dir = {
           medium = "Memory"
+          size_limit = "1Gi"
         }
       }
     }
