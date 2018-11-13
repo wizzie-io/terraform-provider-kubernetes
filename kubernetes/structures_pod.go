@@ -7,6 +7,7 @@ import (
 
 	"github.com/hashicorp/terraform/helper/schema"
 	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 // Flatteners
@@ -360,6 +361,7 @@ func flattenConfigMapVolumeSource(in *v1.ConfigMapVolumeSource) []interface{} {
 func flattenEmptyDirVolumeSource(in *v1.EmptyDirVolumeSource) []interface{} {
 	att := make(map[string]interface{})
 	att["medium"] = in.Medium
+	att["size_limit"] = in.SizeLimit.String()
 	return []interface{}{att}
 }
 
@@ -725,15 +727,20 @@ func expandGitRepoVolumeSource(l []interface{}) *v1.GitRepoVolumeSource {
 	return obj
 }
 
-func expandEmptyDirVolumeSource(l []interface{}) *v1.EmptyDirVolumeSource {
+func expandEmptyDirVolumeSource(l []interface{}) (*v1.EmptyDirVolumeSource, error) {
 	if len(l) == 0 || l[0] == nil {
-		return &v1.EmptyDirVolumeSource{}
+		return &v1.EmptyDirVolumeSource{}, nil
 	}
 	in := l[0].(map[string]interface{})
-	obj := &v1.EmptyDirVolumeSource{
-		Medium: v1.StorageMedium(in["medium"].(string)),
+	v, err := resource.ParseQuantity(in["size_limit"].(string))
+	if err != nil {
+		return &v1.EmptyDirVolumeSource{}, err
 	}
-	return obj
+	obj := &v1.EmptyDirVolumeSource{
+		Medium:    v1.StorageMedium(in["medium"].(string)),
+		SizeLimit: &v,
+	}
+	return obj, nil
 }
 
 func expandPersistentVolumeClaimVolumeSource(l []interface{}) *v1.PersistentVolumeClaimVolumeSource {
@@ -786,7 +793,11 @@ func expandVolumes(volumes []interface{}) ([]v1.Volume, error) {
 		}
 
 		if value, ok := m["empty_dir"].([]interface{}); ok && len(value) > 0 {
-			vl[i].EmptyDir = expandEmptyDirVolumeSource(value)
+			var err error
+			vl[i].EmptyDir, err = expandEmptyDirVolumeSource(value)
+			if err != nil {
+				return vl, err
+			}
 		}
 		if value, ok := m["downward_api"].([]interface{}); ok && len(value) > 0 {
 			var err error
