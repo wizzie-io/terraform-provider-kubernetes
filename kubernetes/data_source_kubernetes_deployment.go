@@ -11,7 +11,7 @@ func dataSourceKubernetesDeployment() *schema.Resource {
 	addRequiredFieldsToSchema(dsSchema, "metadata")
 	addRequiredFieldsToSchema(dsSchema["metadata"].Elem.(*schema.Resource).Schema, "name")
 
-	addOptionalFieldsToSchema(dsSchema["metadata"].Elem.(*schema.Resource).Schema, "namespace")
+	addRequiredFieldsToSchema(dsSchema["metadata"].Elem.(*schema.Resource).Schema, "namespace")
 
 	return &schema.Resource{
 		Read: dataSourceKubernetesDeploymentRead,

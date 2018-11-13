@@ -51,6 +51,7 @@ func testAccKubernetesDataSourceDeploymentConfig_basic(name string) string {
 data "kubernetes_deployment" "test" {
 	metadata {
 		name = "${kubernetes_deployment.test.metadata.0.name}"
+		namespace = "${kubernetes_deployment.test.metadata.0.namespace}"
 	}
 }
 `
