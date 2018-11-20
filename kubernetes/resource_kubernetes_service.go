@@ -58,7 +58,7 @@ func resourceKubernetesService() *schema.Resource {
 						},
 						"external_traffic_policy": {
 							Type:        schema.TypeString,
-							Description: "Whether to use a cluster-internal IP or preserve the source IP. Must be `Cluster` (default) or `Local`. More info. https://kubernetes.io/docs/tutorials/services/source-ip/",
+							Description: "Denotes if this Service desires to route external traffic to node-local or cluster-wide endpoints. `Local` preserves the client source IP and avoids a second hop for LoadBalancer and Nodeport type services, but risks potentially imbalanced traffic spreading. `Cluster` obscures the client source IP and may cause a second hop to another node, but should have good overall load-spreading.",
 							Optional:    true,
 						},
 						"load_balancer_source_ranges": {
