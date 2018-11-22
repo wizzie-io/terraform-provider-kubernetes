@@ -60,16 +60,19 @@ func resourceKubernetesStatefulSet() *schema.Resource {
 							Description: "revisionHistoryLimit is the maximum number of revisions that will be maintained in the StatefulSet's revision history. The revision history consists of all revisions not represented by a currently applied StatefulSetSpec version. The default value is 10.",
 							Optional:    true,
 							Default:     10,
+							ForceNew:    true,
 						},
 						"selector": {
 							Type:        schema.TypeMap,
 							Description: "A label query over pods that should match the Replicas count. More info: http://kubernetes.io/docs/user-guide/labels#label-selectors",
 							Required:    true,
+							ForceNew:    true,
 						},
 						"service_name": {
 							Type:        schema.TypeString,
 							Description: "The name of the service that governs this StatefulSet. This service must exist before the StatefulSet, and is responsible for the network identity of the set. Pods get DNS/hostnames that follow the pattern: pod-specific-string.serviceName.default.svc.cluster.local where \"pod-specific-string\" is managed by the StatefulSet controller.",
 							Required:    true,
+							ForceNew:    true,
 						},
 						"template": {
 							Type:        schema.TypeList,
