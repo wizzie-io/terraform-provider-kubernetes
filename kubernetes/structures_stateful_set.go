@@ -23,7 +23,7 @@ func flattenStatefulSetSpec(in appsv1.StatefulSetSpec, d *schema.ResourceData) (
 	att["selector"] = in.Selector.MatchLabels
 	att["update_strategy"] = flattenStatefulSetUpdateStrategy(in.UpdateStrategy, d)
 
-	templateMetadata := flattenMetadata(in.Template.ObjectMeta, d)
+	templateMetadata := flattenMetadata(in.Template.ObjectMeta, d, "spec.0.template.0.")
 	podSpec, err := flattenPodSpec(in.Template.Spec)
 	if err != nil {
 		return nil, err
