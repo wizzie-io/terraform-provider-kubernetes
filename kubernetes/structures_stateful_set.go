@@ -76,6 +76,10 @@ func expandStatefulSetSpec(statefulSet []interface{}) (appsv1.StatefulSetSpec, e
 	}
 	in := statefulSet[0].(map[string]interface{})
 
+	if v, ok := in["pod_management_policy"].(string); ok {
+		obj.PodManagementPolicy = appsv1.PodManagementPolicyType(v)
+	}
+
 	if v, ok := in["update_strategy"]; ok {
 		obj.UpdateStrategy = expandStatefulSetUpdateStrategy(v.([]interface{}))
 	}

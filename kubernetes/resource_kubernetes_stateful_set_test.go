@@ -24,7 +24,7 @@ func TestAccKubernetesStatefulSet_basic(t *testing.T) {
 		CheckDestroy: testAccCheckKubernetesStatefulSetDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccKubernetesStatefulSetConfig_basic(statefulSetName, imageName1),
+				Config: testAccKubernetesStatefulSetConfig_basic(statefulSetName, imageName1, "Parallel"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					testAccCheckKubernetesStatefulSetExists("kubernetes_stateful_set.test", &sset),
 					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "metadata.0.name", statefulSetName),
@@ -35,14 +35,16 @@ func TestAccKubernetesStatefulSet_basic(t *testing.T) {
 					resource.TestCheckResourceAttrSet("kubernetes_stateful_set.test", "metadata.0.self_link"),
 					resource.TestCheckResourceAttrSet("kubernetes_stateful_set.test", "metadata.0.uid"),
 					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "spec.0.service_name", statefulSetName),
+					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "spec.0.pod_management_policy", "Parallel"),
 					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "spec.0.template.0.spec.0.container.0.image", imageName1),
 				),
 			},
 			{
-				Config: testAccKubernetesStatefulSetConfig_basic(statefulSetName, imageName2),
+				Config: testAccKubernetesStatefulSetConfig_basic(statefulSetName, imageName2, "OrderedReady"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					testAccCheckKubernetesStatefulSetExists("kubernetes_stateful_set.test", &sset),
 					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "spec.0.template.0.spec.0.container.0.image", imageName2),
+					resource.TestCheckResourceAttr("kubernetes_stateful_set.test", "spec.0.pod_management_policy", "OrderedReady"),
 				),
 			},
 		},
@@ -170,7 +172,7 @@ func testAccCheckKubernetesStatefulSetDestroy(s *terraform.State) error {
 	return nil
 }
 
-func testAccKubernetesStatefulSetConfig_basic(name, image string) string {
+func testAccKubernetesStatefulSetConfig_basic(name, image, podMgmtPolicy string) string {
 	return fmt.Sprintf(`
 resource "kubernetes_stateful_set" "test" {
   metadata {
@@ -184,6 +186,7 @@ resource "kubernetes_stateful_set" "test" {
     selector {
       app = "one"
     }
+	pod_management_policy = "%s"
     service_name = "%s"
     template {
 			metadata {
@@ -200,7 +203,7 @@ resource "kubernetes_stateful_set" "test" {
     }
   }
 }
-`, name, name, image)
+`, name, podMgmtPolicy, name, image)
 }
 
 func testAccKubernetesStatefulSetConfig_pvcTemplate(name, image string) string {
