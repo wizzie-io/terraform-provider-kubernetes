@@ -22,6 +22,7 @@ func resourceKubernetesService() *schema.Resource {
 		Importer: &schema.ResourceImporter{
 			State: schema.ImportStatePassthrough,
 		},
+		CustomizeDiff: resourceKubernetesServiceCustomizeDiff,
 
 		Schema: map[string]*schema.Schema{
 			"metadata": namespacedMetadataSchema("service", true),
@@ -51,14 +52,20 @@ func resourceKubernetesService() *schema.Resource {
 							Description: "The external reference that kubedns or equivalent will return as a CNAME record for this service. No proxying will be involved. Must be a valid DNS name and requires `type` to be `ExternalName`.",
 							Optional:    true,
 						},
-						"load_balancer_ip": {
-							Type:        schema.TypeString,
-							Description: "Only applies to `type = LoadBalancer`. LoadBalancer will get created with the IP specified in this field. This feature depends on whether the underlying cloud-provider supports specifying this field when a load balancer is created. This field will be ignored if the cloud-provider does not support the feature.",
-							Optional:    true,
-						},
 						"external_traffic_policy": {
 							Type:        schema.TypeString,
 							Description: "Denotes if this Service desires to route external traffic to node-local or cluster-wide endpoints. `Local` preserves the client source IP and avoids a second hop for LoadBalancer and Nodeport type services, but risks potentially imbalanced traffic spreading. `Cluster` obscures the client source IP and may cause a second hop to another node, but should have good overall load-spreading.",
+							Optional:    true,
+							Computed:    true,
+						},
+						"health_check_node_port": {
+							Type:        schema.TypeInt,
+							Description: "healthCheckNodePort specifies the healthcheck nodePort for the service. If not specified, HealthCheckNodePort is created by the service api backend with the allocated nodePort. Will use user-specified nodePort value if specified by the client. Only effects when Type is set to LoadBalancer and ExternalTrafficPolicy is set to Local.",
+							Optional:    true,
+						},
+						"load_balancer_ip": {
+							Type:        schema.TypeString,
+							Description: "Only applies to `type = LoadBalancer`. LoadBalancer will get created with the IP specified in this field. This feature depends on whether the underlying cloud-provider supports specifying this field when a load balancer is created. This field will be ignored if the cloud-provider does not support the feature.",
 							Optional:    true,
 						},
 						"load_balancer_source_ranges": {
@@ -106,22 +113,56 @@ func resourceKubernetesService() *schema.Resource {
 								},
 							},
 						},
+						"publish_not_ready_addresses": {
+							Type:        schema.TypeBool,
+							Description: "publishNotReadyAddresses, when set to true, indicates that DNS implementations must publish the notReadyAddresses of subsets for the Endpoints associated with the Service. The default value is false. The primary use case for setting this field is to use a StatefulSet's Headless Service to propagate SRV records for its Pods without respect to their readiness for purpose of peer discovery. This field will replace the service.alpha.kubernetes.io/tolerate-unready-endpoints when that annotation is deprecated and all clients have been converted to use this field.",
+							Optional:    true,
+							Default:     false,
+						},
 						"selector": {
 							Type:        schema.TypeMap,
 							Description: "Route service traffic to pods with label keys and values matching this selector. Only applies to types `ClusterIP`, `NodePort`, and `LoadBalancer`. More info: http://kubernetes.io/docs/user-guide/services#overview",
 							Optional:    true,
 						},
 						"session_affinity": {
-							Type:        schema.TypeString,
-							Description: "Used to maintain session affinity. Supports `ClientIP` and `None`. Defaults to `None`. More info: http://kubernetes.io/docs/user-guide/services#virtual-ips-and-service-proxies",
+							Type:         schema.TypeString,
+							Description:  "Used to maintain session affinity. Supports `ClientIP` and `None`. Defaults to `None`. More info: http://kubernetes.io/docs/user-guide/services#virtual-ips-and-service-proxies",
+							Optional:     true,
+							Default:      "None",
+							ValidateFunc: validateAttributeValueIsIn([]string{"ClientIP", "None"}),
+						},
+						"session_affinity_config": {
+							Type:        schema.TypeList,
+							Description: "sessionAffinityConfig contains the configurations of session affinity.",
 							Optional:    true,
-							Default:     "None",
+							MaxItems:    1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"client_ip_config": {
+										Type:        schema.TypeList,
+										Description: "ClientIPConfig represents the configurations of Client IP based session affinity.",
+										Optional:    true,
+										MaxItems:    1,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"timeout_seconds": {
+													Type:        schema.TypeInt,
+													Description: "timeoutSeconds specifies the seconds of ClientIP type session sticky time. The value must be >0 && <=86400(for 1 day) if ServiceAffinity == 'ClientIP'. Default value is 10800(for 3 hours).",
+													Optional:    true,
+													Default:     10800,
+												},
+											},
+										},
+									},
+								},
+							},
 						},
 						"type": {
-							Type:        schema.TypeString,
-							Description: "Determines how the service is exposed. Defaults to `ClusterIP`. Valid options are `ExternalName`, `ClusterIP`, `NodePort`, and `LoadBalancer`. `ExternalName` maps to the specified `external_name`. More info: http://kubernetes.io/docs/user-guide/services#overview",
-							Optional:    true,
-							Default:     "ClusterIP",
+							Type:         schema.TypeString,
+							Description:  "Determines how the service is exposed. Defaults to `ClusterIP`. Valid options are `ExternalName`, `ClusterIP`, `NodePort`, and `LoadBalancer`. `ExternalName` maps to the specified `external_name`. More info: http://kubernetes.io/docs/user-guide/services#overview",
+							Optional:     true,
+							Default:      "ClusterIP",
+							ValidateFunc: validateAttributeValueIsIn([]string{"ExternalName", "ClusterIP", "NodePort", "LoadBalancer"}),
 						},
 					},
 				},
@@ -296,4 +337,21 @@ func resourceKubernetesServiceExists(d *schema.ResourceData, meta interface{}) (
 		log.Printf("[DEBUG] Received error: %#v", err)
 	}
 	return true, err
+}
+
+func resourceKubernetesServiceCustomizeDiff(df *schema.ResourceDiff, d interface{}) error {
+	svcType := df.Get("spec.0.type")
+	isExternalServiceType := (svcType == api.ServiceTypeLoadBalancer || svcType == api.ServiceTypeNodePort)
+
+	if df.HasChange("spec.0.external_traffic_policy") {
+		old, new := df.GetChange("spec.0.external_traffic_policy")
+		if old == "Cluster" && new == "" && isExternalServiceType {
+			// The default value of 'external_traffic_policy' is "Cluster" but only when
+			// the service type is LoadBalancer or NodePort.
+			// Ignore this diff
+			df.Clear("spec.0.external_traffic_policy")
+		}
+	}
+
+	return nil
 }
