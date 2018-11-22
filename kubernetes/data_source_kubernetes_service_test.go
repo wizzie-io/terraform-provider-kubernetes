@@ -43,7 +43,8 @@ func testAccKubernetesDataSourceServiceConfig_basic(name string) string {
 	return testAccKubernetesServiceConfig_basic(name) + `
 data "kubernetes_service" "test" {
 	metadata {
-		name = "${kubernetes_service.test.metadata.0.name}"
+		name      = "${kubernetes_service.test.metadata.0.name}"
+		namespace = "${kubernetes_service.test.metadata.0.namespace}"
 	}
 }
 `

@@ -31,35 +31,44 @@ func flattenServicePort(in []v1.ServicePort) []interface{} {
 
 func flattenServiceSpec(in v1.ServiceSpec) []interface{} {
 	att := make(map[string]interface{})
-	if len(in.Ports) > 0 {
-		att["port"] = flattenServicePort(in.Ports)
-	}
-	if len(in.Selector) > 0 {
-		att["selector"] = in.Selector
-	}
 	if in.ClusterIP != "" {
 		att["cluster_ip"] = in.ClusterIP
-	}
-	if in.Type != "" {
-		att["type"] = string(in.Type)
 	}
 	if len(in.ExternalIPs) > 0 {
 		att["external_ips"] = newStringSet(schema.HashString, in.ExternalIPs)
 	}
-	if in.SessionAffinity != "" {
-		att["session_affinity"] = string(in.SessionAffinity)
-	}
-	if in.LoadBalancerIP != "" {
-		att["load_balancer_ip"] = in.LoadBalancerIP
+	if in.ExternalName != "" {
+		att["external_name"] = in.ExternalName
 	}
 	if in.ExternalTrafficPolicy != "" {
 		att["external_traffic_policy"] = in.ExternalTrafficPolicy
 	}
+	if in.HealthCheckNodePort > 0 {
+		att["health_check_node_port"] = in.HealthCheckNodePort
+	}
+	if in.LoadBalancerIP != "" {
+		att["load_balancer_ip"] = in.LoadBalancerIP
+	}
 	if len(in.LoadBalancerSourceRanges) > 0 {
 		att["load_balancer_source_ranges"] = newStringSet(schema.HashString, in.LoadBalancerSourceRanges)
 	}
-	if in.ExternalName != "" {
-		att["external_name"] = in.ExternalName
+	if len(in.Ports) > 0 {
+		att["port"] = flattenServicePort(in.Ports)
+	}
+
+	att["publish_not_ready_addresses"] = in.PublishNotReadyAddresses
+
+	if len(in.Selector) > 0 {
+		att["selector"] = in.Selector
+	}
+	if in.SessionAffinity != "" {
+		att["session_affinity"] = string(in.SessionAffinity)
+	}
+	if in.SessionAffinityConfig != nil && in.SessionAffinityConfig.ClientIP != nil {
+		att["session_affinity_config"] = flattenSessionAffinityConfig(in.SessionAffinityConfig)
+	}
+	if in.Type != "" {
+		att["type"] = string(in.Type)
 	}
 	return []interface{}{att}
 }
@@ -75,6 +84,22 @@ func flattenLoadBalancerIngress(in []v1.LoadBalancerIngress) []interface{} {
 		out[i] = att
 	}
 	return out
+}
+
+func flattenSessionAffinityConfig(in *v1.SessionAffinityConfig) []interface{} {
+	if in == nil {
+		return nil
+	}
+	att := make(map[string]interface{})
+	if in.ClientIP != nil {
+		clientIPAtt := make(map[string]interface{})
+		if in.ClientIP.TimeoutSeconds != nil && *in.ClientIP.TimeoutSeconds != 10800 {
+			clientIPAtt["timeout_seconds"] = int(*in.ClientIP.TimeoutSeconds)
+			att["client_ip_config"] = []interface{}{clientIPAtt}
+			return []interface{}{att}
+		}
+	}
+	return nil
 }
 
 // Expanders
@@ -114,35 +139,71 @@ func expandServiceSpec(l []interface{}) v1.ServiceSpec {
 	in := l[0].(map[string]interface{})
 	obj := v1.ServiceSpec{}
 
-	if v, ok := in["port"].([]interface{}); ok && len(v) > 0 {
-		obj.Ports = expandServicePort(v)
-	}
-	if v, ok := in["selector"].(map[string]interface{}); ok && len(v) > 0 {
-		obj.Selector = expandStringMap(v)
-	}
-	if v, ok := in["cluster_ip"].(string); ok {
-		obj.ClusterIP = v
-	}
+	// process type first, as it's needed for conditional handling of other attributes
 	if v, ok := in["type"].(string); ok {
 		obj.Type = v1.ServiceType(v)
+	}
+
+	if v, ok := in["cluster_ip"].(string); ok {
+		obj.ClusterIP = v
 	}
 	if v, ok := in["external_ips"].(*schema.Set); ok && v.Len() > 0 {
 		obj.ExternalIPs = sliceOfString(v.List())
 	}
-	if v, ok := in["session_affinity"].(string); ok {
-		obj.SessionAffinity = v1.ServiceAffinity(v)
+	if v, ok := in["external_name"].(string); ok {
+		obj.ExternalName = v
+	}
+	if v, ok := in["external_traffic_policy"].(string); ok && (obj.Type == v1.ServiceTypeNodePort || obj.Type == v1.ServiceTypeLoadBalancer) {
+		obj.ExternalTrafficPolicy = v1.ServiceExternalTrafficPolicyType(v)
+	}
+	if v, ok := in["health_check_node_port"].(int); ok {
+		obj.HealthCheckNodePort = int32(v)
 	}
 	if v, ok := in["load_balancer_ip"].(string); ok {
 		obj.LoadBalancerIP = v
 	}
-	if v, ok := in["external_traffic_policy"].(string); ok {
-		obj.ExternalTrafficPolicy = v1.ServiceExternalTrafficPolicyType(v)
-	}
 	if v, ok := in["load_balancer_source_ranges"].(*schema.Set); ok && v.Len() > 0 {
 		obj.LoadBalancerSourceRanges = sliceOfString(v.List())
 	}
-	if v, ok := in["external_name"].(string); ok {
-		obj.ExternalName = v
+	if v, ok := in["port"].([]interface{}); ok && len(v) > 0 {
+		obj.Ports = expandServicePort(v)
+	}
+	if v, ok := in["publish_not_ready_addresses"].(bool); ok {
+		obj.PublishNotReadyAddresses = v
+	}
+	if v, ok := in["selector"].(map[string]interface{}); ok && len(v) > 0 {
+		obj.Selector = expandStringMap(v)
+	}
+	if v, ok := in["session_affinity"].(string); ok {
+		obj.SessionAffinity = v1.ServiceAffinity(v)
+	}
+	if v, ok := in["session_affinity_config"].([]interface{}); ok && len(v) > 0 {
+		obj.SessionAffinityConfig = expandSessionAffinityConfig(v)
+	}
+	return obj
+}
+
+func expandSessionAffinityConfig(l []interface{}) *v1.SessionAffinityConfig {
+	if len(l) == 0 || l[0] == nil {
+		return nil
+	}
+	var obj *v1.SessionAffinityConfig
+
+	for _, n := range l {
+		cfg := n.(map[string]interface{})
+		if v, ok := cfg["client_ip_config"].([]interface{}); ok && len(v) > 0 {
+			for _, n2 := range v {
+				cfg2 := n2.(map[string]interface{})
+				if v2, ok2 := cfg2["timeout_seconds"].(int); ok2 {
+					obj = &v1.SessionAffinityConfig{
+						ClientIP: &v1.ClientIPConfig{
+							TimeoutSeconds: ptrToInt32(int32(v2)),
+						},
+					}
+				}
+			}
+		}
+
 	}
 	return obj
 }

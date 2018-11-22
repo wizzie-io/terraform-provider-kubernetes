@@ -358,6 +358,75 @@ func TestAccKubernetesService_generatedName(t *testing.T) {
 	})
 }
 
+func TestAccKubernetesService_headless(t *testing.T) {
+	var conf api.Service
+	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:      func() { testAccPreCheck(t) },
+		IDRefreshName: "kubernetes_service.test",
+		Providers:     testAccProviders,
+		CheckDestroy:  testAccCheckKubernetesServiceDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKubernetesServiceConfig_headless(name),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesServiceExists("kubernetes_service.test", &conf),
+					resource.TestCheckResourceAttr("kubernetes_service.test", "metadata.0.name", name),
+					resource.TestCheckResourceAttr("kubernetes_service.test", "spec.0.cluster_ip", "None"),
+					resource.TestCheckResourceAttr("kubernetes_service.test", "spec.0.publish_not_ready_addresses", "true"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccKubernetesService_sessionAffinityConfig(t *testing.T) {
+	var conf api.Service
+	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:      func() { testAccPreCheck(t) },
+		IDRefreshName: "kubernetes_service.test",
+		Providers:     testAccProviders,
+		CheckDestroy:  testAccCheckKubernetesServiceDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKubernetesServiceConfig_sessionAffinityConfig(name),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesServiceExists("kubernetes_service.test", &conf),
+					resource.TestCheckResourceAttr("kubernetes_service.test", "metadata.0.name", name),
+					resource.TestCheckResourceAttr("kubernetes_service.test", "spec.0.session_affinity_config.#", "1"),
+					resource.TestCheckResourceAttr("kubernetes_service.test", "spec.0.session_affinity_config.0.client_ip_config.#", "1"),
+					resource.TestCheckResourceAttr("kubernetes_service.test", "spec.0.session_affinity_config.0.client_ip_config.0.timeout_seconds", "180"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccKubernetesService_externalTrafficPolicy(t *testing.T) {
+	var conf api.Service
+	name := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:      func() { testAccPreCheck(t) },
+		IDRefreshName: "kubernetes_service.test",
+		Providers:     testAccProviders,
+		CheckDestroy:  testAccCheckKubernetesServiceDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKubernetesServiceConfig_externalTrafficPolicy(name),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesServiceExists("kubernetes_service.test", &conf),
+					resource.TestCheckResourceAttr("kubernetes_service.test", "metadata.0.name", name),
+					resource.TestCheckResourceAttr("kubernetes_service.test", "spec.0.external_traffic_policy", "Local"),
+				),
+			},
+		},
+	})
+}
+
 func TestAccKubernetesService_importGeneratedName(t *testing.T) {
 	resourceName := "kubernetes_service.test"
 	prefix := "tf-acc-test-gen-import-"
@@ -626,4 +695,76 @@ resource "kubernetes_service" "test" {
 		}
 	}
 }`, prefix)
+}
+
+func testAccKubernetesServiceConfig_sessionAffinityConfig(name string) string {
+	return fmt.Sprintf(`
+resource "kubernetes_service" "test" {
+  metadata {
+    name = "%s"
+  }
+  spec {
+    selector {
+      App = "MyOtherApp"
+    }
+    port {
+      name = "http"
+      port = 80
+    }
+	session_affinity = "ClientIP"
+	session_affinity_config {
+		client_ip_config {
+			timeout_seconds = 180
+		}
+	}
+  }
+}
+`, name)
+}
+
+func testAccKubernetesServiceConfig_headless(name string) string {
+	return fmt.Sprintf(`
+resource "kubernetes_service" "test" {
+  metadata {
+    name = "%s"
+  }
+  spec {
+	cluster_ip = "None"
+    port {
+      name = "http"
+      port = 80
+    }
+	publish_not_ready_addresses = true
+    selector {
+      App = "headlessApp"
+    }
+
+	type = "ClusterIP"
+  }
+}
+`, name)
+}
+
+func testAccKubernetesServiceConfig_externalTrafficPolicy(name string) string {
+	return fmt.Sprintf(`
+resource "kubernetes_service" "test" {
+  metadata {
+    name = "%s"
+  }
+  spec {
+	external_traffic_policy = "Local"
+
+    port {
+      name = "http"
+      port = 80
+    }
+
+    selector {
+      App = "headlessApp"
+    }
+
+	type = "NodePort"
+  }
+}
+`, name)
 }
