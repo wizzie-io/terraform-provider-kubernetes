@@ -496,6 +496,7 @@ resource "kubernetes_deployment" "test" {
 				"prometheus.io/scrape" = "true"
 				"prometheus.io/scheme" = "https"
 				"prometheus.io/port"   = "4000"
+                "kubernetes.io/egress-bandwidth" = "1M"
 			}
 		}
 		spec {

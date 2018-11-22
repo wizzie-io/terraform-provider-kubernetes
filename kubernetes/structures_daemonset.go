@@ -22,7 +22,7 @@ func flattenDaemonSetSpec(in appsv1.DaemonSetSpec, d *schema.ResourceData) ([]in
 	// }
 	// att["template"] = podSpec
 
-	templateMetadata := flattenMetadata(in.Template.ObjectMeta, d)
+	templateMetadata := flattenMetadata(in.Template.ObjectMeta, d, "spec.0.template.0.")
 	podSpec, err := flattenPodSpec(in.Template.Spec)
 	if err != nil {
 		return nil, err
