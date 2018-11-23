@@ -400,7 +400,19 @@ func TestAccKubernetesPod_with_empty_dir_volume(t *testing.T) {
 		CheckDestroy: testAccCheckKubernetesPodDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccKubernetesPodConfigWithEmptyDirVolumes(podName, imageName),
+				Config: testAccKubernetesPodConfigWithEmptyDirVolumes1(podName, imageName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesPodExists("kubernetes_pod.test", &conf),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.container.0.image", imageName),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.container.0.volume_mount.#", "1"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.container.0.volume_mount.0.mount_path", "/cache"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.container.0.volume_mount.0.name", "cache-volume"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.volume.0.empty_dir.0.medium", "Memory"),
+					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.volume.0.empty_dir.0.size_limit", "0"),
+				),
+			},
+			{
+				Config: testAccKubernetesPodConfigWithEmptyDirVolumes2(podName, imageName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					testAccCheckKubernetesPodExists("kubernetes_pod.test", &conf),
 					resource.TestCheckResourceAttr("kubernetes_pod.test", "spec.0.container.0.image", imageName),
@@ -1022,7 +1034,38 @@ resource "kubernetes_pod" "test" {
 	`, podName, imageName)
 }
 
-func testAccKubernetesPodConfigWithEmptyDirVolumes(podName, imageName string) string {
+func testAccKubernetesPodConfigWithEmptyDirVolumes1(podName, imageName string) string {
+	return fmt.Sprintf(`
+resource "kubernetes_pod" "test" {
+  metadata {
+    labels {
+      app = "pod_label"
+    }
+
+    name = "%s"
+  }
+
+  spec {
+    container {
+      image = "%s"
+      name  = "containername"
+      volume_mount {
+        mount_path =  "/cache"
+        name =  "cache-volume"
+      }
+    }
+    volume {
+      name = "cache-volume"
+      empty_dir = {
+        medium = "Memory"
+      }
+    }
+  }
+}
+`, podName, imageName)
+}
+
+func testAccKubernetesPodConfigWithEmptyDirVolumes2(podName, imageName string) string {
 	return fmt.Sprintf(`
 resource "kubernetes_pod" "test" {
   metadata {
@@ -1046,7 +1089,7 @@ resource "kubernetes_pod" "test" {
       name = "cache-volume"
       empty_dir = {
         size_limit = "1Gi"
-        medium = "Memory"
+        medium     = "Memory"
       }
     }
   }

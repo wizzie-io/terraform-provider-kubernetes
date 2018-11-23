@@ -253,7 +253,7 @@ func podSpecFields(isUpdatable bool) map[string]*schema.Schema {
 			Type:        schema.TypeList,
 			Optional:    true,
 			Description: "List of volumes that can be mounted by containers belonging to the pod. More info: http://kubernetes.io/docs/user-guide/volumes",
-			Elem:        volumeSchema(),
+			Elem:        volumeSchema(isUpdatable),
 		},
 	}
 
@@ -274,7 +274,7 @@ func podSpecFields(isUpdatable bool) map[string]*schema.Schema {
 	return s
 }
 
-func volumeSchema() *schema.Resource {
+func volumeSchema(isUpdatable bool) *schema.Resource {
 	v := commonVolumeSources()
 
 	v["config_map"] = &schema.Schema{
@@ -446,10 +446,12 @@ func volumeSchema() *schema.Resource {
 					ValidateFunc: validateAttributeValueIsIn([]string{"", "Memory"}),
 				},
 				"size_limit": {
-					Type:        schema.TypeString,
-					Description: `Total amount of local storage required for this EmptyDir volume. The size limit is also applicable for memory medium. The maximum usage on memory medium EmptyDir would be the minimum value between the SizeLimit specified here and the sum of memory limits of all containers in a pod. The default is nil which means that the limit is undefined. More info: http://kubernetes.io/docs/user-guide/volumes#emptydir`,
-					Optional:    true,
-					Default:     "",
+					Type:         schema.TypeString,
+					Description:  `Total amount of local storage required for this EmptyDir volume. The size limit is also applicable for memory medium. The maximum usage on memory medium EmptyDir would be the minimum value between the SizeLimit specified here and the sum of memory limits of all containers in a pod. The default is nil which means that the limit is undefined. More info: http://kubernetes.io/docs/user-guide/volumes#emptydir`,
+					Optional:     true,
+					Default:      "0",
+					ForceNew:     !isUpdatable,
+					ValidateFunc: validateResourceQuantity,
 				},
 			},
 		},
