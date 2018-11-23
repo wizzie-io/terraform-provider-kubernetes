@@ -294,6 +294,44 @@ func TestAccKubernetesDeployment_strategy(t *testing.T) {
 	})
 }
 
+func TestAccKubernetesDeployment_with_empty_dir_volume(t *testing.T) {
+	t.Parallel()
+
+	var conf appsv1.Deployment
+
+	depName := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckKubernetesDeploymentDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKubernetesDeploymentWithEmptyDirVolume1(depName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesDeploymentExists("kubernetes_deployment.test", &conf),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.template.0.spec.0.container.0.volume_mount.#", "1"),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.template.0.spec.0.container.0.volume_mount.0.mount_path", "/cache"),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.template.0.spec.0.container.0.volume_mount.0.name", "cache-volume"),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.template.0.spec.0.volume.0.empty_dir.0.medium", "Memory"),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.template.0.spec.0.volume.0.empty_dir.0.size_limit", "0"),
+				),
+			},
+			{
+				Config: testAccKubernetesDeploymentWithEmptyDirVolume2(depName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesDeploymentExists("kubernetes_deployment.test", &conf),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.template.0.spec.0.container.0.volume_mount.#", "1"),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.template.0.spec.0.container.0.volume_mount.0.mount_path", "/cache"),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.template.0.spec.0.container.0.volume_mount.0.name", "cache-volume"),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.template.0.spec.0.volume.0.empty_dir.0.medium", "Memory"),
+					resource.TestCheckResourceAttr("kubernetes_deployment.test", "spec.0.template.0.spec.0.volume.0.empty_dir.0.size_limit", "1Gi"),
+				),
+			},
+		},
+	})
+}
+
 func pause() resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		time.Sleep(1 * time.Minute)
@@ -718,6 +756,89 @@ resource "kubernetes_deployment" "test" {
         container {
           image = "alpine"
           name  = "containername"
+        }
+      }
+    }
+  }
+}
+`, depName)
+}
+
+func testAccKubernetesDeploymentWithEmptyDirVolume1(depName string) string {
+	return fmt.Sprintf(`
+resource "kubernetes_deployment" "test" {
+  metadata {
+    name = "%s"
+  }
+
+  spec {
+    selector {
+      foo = "bar"
+    }
+
+    template {
+      metadata {
+        labels {
+          foo = "bar"
+        }
+      }
+
+      spec {
+        container {
+          image = "citizenstig/httpbin"
+          name  = "containername"
+          volume_mount {
+            mount_path =  "/cache"
+            name =  "cache-volume"
+          }
+        }
+        volume {
+          name = "cache-volume"
+          empty_dir = {
+            medium     = "Memory"
+          }
+        }
+      }
+    }
+  }
+}
+`, depName)
+}
+
+func testAccKubernetesDeploymentWithEmptyDirVolume2(depName string) string {
+	return fmt.Sprintf(`
+resource "kubernetes_deployment" "test" {
+  metadata {
+    name = "%s"
+  }
+
+  spec {
+    selector {
+      foo = "bar"
+    }
+
+    template {
+      metadata {
+        labels {
+          foo = "bar"
+        }
+      }
+
+      spec {
+        container {
+          image = "citizenstig/httpbin"
+          name  = "containername"
+          volume_mount {
+            mount_path =  "/cache"
+            name =  "cache-volume"
+          }
+        }
+        volume {
+          name = "cache-volume"
+          empty_dir = {
+            size_limit = "1Gi"
+            medium     = "Memory"
+          }
         }
       }
     }

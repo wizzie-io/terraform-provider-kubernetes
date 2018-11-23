@@ -734,13 +734,19 @@ func expandEmptyDirVolumeSource(l []interface{}) (*v1.EmptyDirVolumeSource, erro
 		return &v1.EmptyDirVolumeSource{}, nil
 	}
 	in := l[0].(map[string]interface{})
-	v, err := resource.ParseQuantity(in["size_limit"].(string))
-	if err != nil {
-		return &v1.EmptyDirVolumeSource{}, err
+
+	var quantity resource.Quantity
+	if cfg, ok := in["size_limit"].(string); ok && len(cfg) > 0 {
+		var err error
+		quantity, err = resource.ParseQuantity(cfg)
+		if err != nil {
+			return &v1.EmptyDirVolumeSource{}, err
+		}
 	}
+
 	obj := &v1.EmptyDirVolumeSource{
 		Medium:    v1.StorageMedium(in["medium"].(string)),
-		SizeLimit: &v,
+		SizeLimit: &quantity,
 	}
 	return obj, nil
 }
