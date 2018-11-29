@@ -50,5 +50,8 @@ $(TARGETS):
 	GOOS=$@ GOARCH=amd64 CGO_ENABLED=0 go build -o "dist/$@/terraform-provider-kubernetes_${TRAVIS_TAG}_x4" -a -ldflags '-extldflags "-static"'
 	zip -j dist/terraform-provider-kubernetes_${TRAVIS_TAG}_$@_amd64.zip dist/$@/terraform-provider-kubernetes_${TRAVIS_TAG}_x4
 
+changelog:
+    github_changelog_generator --user sl1pm4t --project terraform-provider-kubernetes --release-branch custom
+
 .PHONY: build test testacc vet fmt fmtcheck errcheck vendor-status test-compile targets $(TARGETS)
 
