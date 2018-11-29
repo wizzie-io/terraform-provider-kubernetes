@@ -53,6 +53,9 @@ func flattenPodSpec(in v1.PodSpec) ([]interface{}, error) {
 	if len(in.NodeSelector) > 0 {
 		att["node_selector"] = in.NodeSelector
 	}
+	if in.PriorityClassName != "" {
+		att["priority_class_name"] = in.PriorityClassName
+	}
 	if in.RestartPolicy != "" {
 		att["restart_policy"] = in.RestartPolicy
 	}
@@ -489,6 +492,10 @@ func expandPodSpec(p []interface{}) (v1.PodSpec, error) {
 			}
 		}
 		obj.NodeSelector = nodeSelectors
+	}
+
+	if v, ok := in["priority_class_name"]; ok {
+		obj.PriorityClassName = v.(string)
 	}
 
 	if v, ok := in["restart_policy"].(string); ok {

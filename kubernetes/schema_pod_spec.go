@@ -139,6 +139,17 @@ func podSpecFields(isUpdatable bool) map[string]*schema.Schema {
 			Optional:    true,
 			Description: "NodeSelector is a selector which must be true for the pod to fit on a node. Selector which must match a node's labels for the pod to be scheduled on that node. More info: http://kubernetes.io/docs/user-guide/node-selection.",
 		},
+		"priority": {
+			Type:         schema.TypeInt,
+			Optional:     true,
+			ValidateFunc: validatePositiveInteger,
+			Description:  "The priority value. Various system components use this field to find the priority of the pod. When Priority Admission Controller is enabled, it prevents users from setting this field. The admission controller populates this field from PriorityClassName. The higher the value, the higher the priority.",
+		},
+		"priority_class_name": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "If specified, indicates the pod's priority. \"system-node-critical\" and \"system-cluster-critical\" are two special keywords which indicate the highest priorities with the former being the highest priority. Any other name must be defined by creating a PriorityClass object with that name. If not specified, the pod priority will be default or zero if there is no default.",
+		},
 		"restart_policy": {
 			Type:        schema.TypeString,
 			Optional:    true,
