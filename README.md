@@ -13,10 +13,11 @@ This fork supports the following resources in addition to the official provider:
 - Role `kubernetes_role`
 - Role Binding `kubernetes_role_binding`
 - Stateful Set `kubernetes_stateful_set`
+- Priority Class `kubernetes_priority_class`
 
 ## Supported Kubernetes Versions
 
-The latest build of this provider uses v6.0 of the kubernetes [client-go](https://github.com/kubernetes/client-go) library, and has been tested with the following Kubernetes versions:
+The latest build of this provider uses v9.0 of the kubernetes [client-go](https://github.com/kubernetes/client-go) library, and has been tested with the following Kubernetes versions:
 
 - 1.7.x
 - 1.8.x
