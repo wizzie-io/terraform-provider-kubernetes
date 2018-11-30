@@ -27,10 +27,16 @@ func flattenAffinity(in *v1.Affinity) []interface{} {
 func flattenNodeAffinity(in *v1.NodeAffinity) []interface{} {
 	att := make(map[string]interface{})
 	if in.RequiredDuringSchedulingIgnoredDuringExecution != nil {
-		att["required_during_scheduling_ignored_during_execution"] = flattenNodeSelector(in.RequiredDuringSchedulingIgnoredDuringExecution)
+		r := flattenNodeSelector(in.RequiredDuringSchedulingIgnoredDuringExecution)
+		if len(r) > 0 {
+			att["required_during_scheduling_ignored_during_execution"] = r
+		}
 	}
 	if in.PreferredDuringSchedulingIgnoredDuringExecution != nil {
-		att["preferred_during_scheduling_ignored_during_execution"] = flattenPreferredSchedulingTerm(in.PreferredDuringSchedulingIgnoredDuringExecution)
+		r := flattenPreferredSchedulingTerm(in.PreferredDuringSchedulingIgnoredDuringExecution)
+		if len(r) > 0 {
+			att["preferred_during_scheduling_ignored_during_execution"] = r
+		}
 	}
 	if len(att) > 0 {
 		return []interface{}{att}
@@ -155,7 +161,10 @@ func expandAffinity(a []interface{}) (*v1.Affinity, error) {
 	in := a[0].(map[string]interface{})
 	obj := v1.Affinity{}
 	if v, ok := in["node_affinity"].([]interface{}); ok && len(v) > 0 {
-		obj.NodeAffinity = expandNodeAffinity(v)
+		r := expandNodeAffinity(v)
+		if r != nil {
+			obj.NodeAffinity = r
+		}
 	}
 	if v, ok := in["pod_affinity"].([]interface{}); ok && len(v) > 0 {
 		obj.PodAffinity = expandPodAffinity(v)
@@ -168,7 +177,7 @@ func expandAffinity(a []interface{}) (*v1.Affinity, error) {
 
 func expandNodeAffinity(a []interface{}) *v1.NodeAffinity {
 	if len(a) == 0 || a[0] == nil {
-		return &v1.NodeAffinity{}
+		return nil
 	}
 	in := a[0].(map[string]interface{})
 	obj := v1.NodeAffinity{}
@@ -203,10 +212,16 @@ func expandPodAntiAffinity(a []interface{}) *v1.PodAntiAffinity {
 	in := a[0].(map[string]interface{})
 	obj := v1.PodAntiAffinity{}
 	if v, ok := in["required_during_scheduling_ignored_during_execution"].([]interface{}); ok && len(v) > 0 {
-		obj.RequiredDuringSchedulingIgnoredDuringExecution = expandPodAffinityTerms(v)
+		r := expandPodAffinityTerms(v)
+		if r != nil && len(r) > 0 {
+			obj.RequiredDuringSchedulingIgnoredDuringExecution = r
+		}
 	}
 	if v, ok := in["preferred_during_scheduling_ignored_during_execution"].([]interface{}); ok && len(v) > 0 {
-		obj.PreferredDuringSchedulingIgnoredDuringExecution = expandWeightedPodAffinityTerms(v)
+		r := expandWeightedPodAffinityTerms(v)
+		if r != nil && len(r) > 0 {
+			obj.PreferredDuringSchedulingIgnoredDuringExecution = r
+		}
 	}
 	return &obj
 }
