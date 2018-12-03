@@ -11,18 +11,19 @@ script:
 - make test
 branches:
   only:
+  - wizzie
   - custom
-  - /^v\d+\.\d+(\.\d+)?(-\S*)?$/
+  - "/^v\\d+\\.\\d+(\\.\\d+)?(-\\S*)?$/"
 before_deploy:
 - make targets
 deploy:
   provider: releases
   api_key:
-    secure: 3XRh95yUkU1SA/Fwk9beSrSEv0fc1Eot4/MSmOuib1+Do27OKmUVvN6jQkj5dLVoeHJnsv9iAMRxuxmb+YL2HvX2o47cxhwiiB+qU4Jyv2bSuGsapIoyLpUZqhap9VpGsXWlRmXh/gwjovXP22ECayY/5/06hH//JzSXlOa881Z43LLaKHhS1ouVtBYtfPhvCSQI+MMVjBYKYyijVPXePmjoa5z++WQg3DewGIv9yXUy+96ndKWNbihsDubMQbgbzmi+BPQueAF3H/rIbsVCx42eon3CXdBHBfQxWl7M7UXJphrTNZIIUcwYqKn5dgg1LJ5WYDy4M9vu0LQ8bzp23AvLPdC2infrm+yi2Ej6wNn7bcpff+4Dy1rGtwawcn6tFwuV01I+imFEjE8+hAxjRR0R2d7BjvWyQF0rOEdBVJnA8CDffdjJi7ZQS0WSVqdLGfpeYZS+/z/I0So7S3NTPBXpaUSBkmuXloIVsgf9zhRmVzThagj+euyf5t5hWiiERa8RpNg5xMyzWdofemX4WbPdhyF0VbupZRXE/gnPiZ7vAUzgcf28RfIWiFVzZ+OtexakZpK3Ylb24xeQMgXOX1qPa81W3x7KgS1jesoD7LVyY31YM03qmmmfWG7V4a3I1bm140gdCDfXPYS+hMSbG3rsB3WqIhKNdzIIIh3pXCo=
+    secure: hmL3hRUB5Jy+xDcDiTNmUam/KsQ7mjBScrz/P1oltOB1lhd/cMAdrEGZm3uzjn2eeZKX+YR2sJBJ9Alzb9qU4soKvkmvelfP7iUnH0yoj9wAEFwvpsShL4VhqtyBMYE7ng826cI4ITEO70Tabq6e4dUKzkaf1uPuqlRhCUebOZZRr9KjJl0YdAl5QPImF31oef0DwXedoVqn0GljTInFJYZ8+OfhYmvcEg6fwre8hlUg8svxDwvAaT5cfNF6F13PqhzsmorJyhsnGCuF+BmgRVaCtlEpyJoonobMMPluepne09lj2qP7efCcJqJYziL9hVV8diZ4jnPeWxXGIipNsp+uVHf3kmyoUqumczSOqWcfTvo96G99kva/o4y9yZjyHvT+PNBi4JnHrvJ3aQqRIKj/XFWHN4PaWX41Qiyg/qAiFsFvLNsf0tZH1BN9HtzXSJ4JCdbkv0t+QKnZqFvM8kM1rhZyonlG3AEzWXi4NxStlEgT2KbTyC2wIubVs9ytIATnVR8A9uKm7Mu1Uoefdw4nSNDNWRxjFkFBjY43tmREdhJojESBGHoC+zdxE05S2wkgj66nPtAD1SRGJepdUADUSzWausFiVqlJnHu61DfVnnY+Yay48M/e7/Aq+F9yYU3O8E5mLOI8JrvxlTEIrwqwPj+qy9BAPyH4tdkENq8=
   file: dist/*.zip
   file_glob: true
   skip_cleanup: true
   on:
-    repo: sl1pm4t/terraform-provider-kubernetes
-    tags: true 
-    branch: custom
+    repo: wizzie-io/terraform-provider-kubernetes
+    tags: true
+    branch: wizzie
