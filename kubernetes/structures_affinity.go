@@ -10,13 +10,22 @@ import (
 func flattenAffinity(in *v1.Affinity) []interface{} {
 	att := make(map[string]interface{})
 	if in.NodeAffinity != nil {
-		att["node_affinity"] = flattenNodeAffinity(in.NodeAffinity)
+		na := flattenNodeAffinity(in.NodeAffinity)
+		if len(na) > 0 {
+			att["node_affinity"] = na
+		}
 	}
 	if in.PodAffinity != nil {
-		att["pod_affinity"] = flattenPodAffinity(in.PodAffinity)
+		pa := flattenPodAffinity(in.PodAffinity)
+		if len(pa) > 0 {
+			att["pod_affinity"] = pa
+		}
 	}
 	if in.PodAntiAffinity != nil {
-		att["pod_anti_affinity"] = flattenPodAntiAffinity(in.PodAntiAffinity)
+		paa := flattenPodAntiAffinity(in.PodAntiAffinity)
+		if len(paa) > 0 {
+			att["pod_anti_affinity"] = paa
+		}
 	}
 	if len(att) > 0 {
 		return []interface{}{att}
