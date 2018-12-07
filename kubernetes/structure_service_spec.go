@@ -83,6 +83,17 @@ func flattenLoadBalancerIngress(in []v1.LoadBalancerIngress) []interface{} {
 
 		out[i] = att
 	}
+
+	if len(in) == 0 {
+		out = make([]interface{}, 1, 1)
+		att := make(map[string]interface{})
+
+		att["ip"] = ""
+		att["hostname"] = ""
+
+		out[0] = att
+	}
+
 	return out
 }
 
