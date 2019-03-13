@@ -1,6 +1,8 @@
 package kubernetes
 
 import (
+	"strings"
+
 	"github.com/hashicorp/terraform/helper/schema"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -15,4 +17,10 @@ func suppressEquivalentResourceQuantity(k, old, new string, d *schema.ResourceDa
 		return false
 	}
 	return oldQ.Cmp(newQ) == 0
+}
+
+func suppressEmptyMapValues(k, old, new string, d *schema.ResourceData) bool {
+	key := strings.Replace(k, "#", new, 1)
+	_, ok := d.GetOk(key)
+	return !ok
 }
