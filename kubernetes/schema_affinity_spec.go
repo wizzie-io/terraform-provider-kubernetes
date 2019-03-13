@@ -12,6 +12,7 @@ func affinityFields() map[string]*schema.Schema {
 			Elem: &schema.Resource{
 				Schema: nodeAffinityFields(),
 			},
+			DiffSuppressFunc: suppressEmptyMapValues,
 		},
 		"pod_affinity": {
 			Type:        schema.TypeList,
@@ -21,6 +22,7 @@ func affinityFields() map[string]*schema.Schema {
 			Elem: &schema.Resource{
 				Schema: podAffinityFields(),
 			},
+			DiffSuppressFunc: suppressEmptyMapValues,
 		},
 		"pod_anti_affinity": {
 			Type:        schema.TypeList,
@@ -30,6 +32,7 @@ func affinityFields() map[string]*schema.Schema {
 			Elem: &schema.Resource{
 				Schema: podAffinityFields(),
 			},
+			DiffSuppressFunc: suppressEmptyMapValues,
 		},
 	}
 }
