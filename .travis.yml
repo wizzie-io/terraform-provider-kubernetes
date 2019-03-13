@@ -1,14 +1,13 @@
 language: go
 sudo: false
 go:
-- '1.10'
+- '1.11'
 before_script:
 - bash scripts/gogetcookie.sh
 - go get ./...
 script:
 - make fmtcheck
 - make vet
-- make test
 branches:
   only:
   - wizzie
